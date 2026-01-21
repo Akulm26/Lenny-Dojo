@@ -69,8 +69,10 @@ export default function Settings() {
       const result = await seedIntelligenceCache((current, total, message) => {
         setSeedProgress({ current, total, message });
       });
-      
-      setCacheCount(result.cached + result.seeded);
+
+      // Re-check authoritative count from backend after extraction
+      const status = await getCacheStatus();
+      setCacheCount(status.cached);
       setSeedResult(`Seeded ${result.seeded} episodes!`);
     } catch (error) {
       console.error('Seed cache error:', error);
