@@ -109,7 +109,7 @@ Evaluate the answer. Return ONLY this JSON:
   "encouragement": "<1-2 sentences of genuine encouragement>"
 }`;
 
-    const response = await fetch('https://api.lovable.dev/v1/chat/completions', {
+    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
