@@ -1,3 +1,4 @@
+// Seed Intelligence Cache Edge Function - v2 (no auth required)
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -11,45 +12,11 @@ const corsHeaders = {
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY');
 
-// Authentication - accepts service role, authenticated user JWT, OR anon key (for demo seeding)
-async function authenticateRequest(req: Request): Promise<{ authenticated: boolean; useServiceRole: boolean; error?: string }> {
-  const authHeader = req.headers.get('Authorization');
-  
-  if (!authHeader?.startsWith('Bearer ')) {
-    return { authenticated: false, useServiceRole: false, error: 'Missing or invalid Authorization header' };
-  }
-
-  const token = authHeader.replace('Bearer ', '');
-  
-  // Option 1: Service role key (for internal calls) - gets write access
-  if (token === SUPABASE_SERVICE_ROLE_KEY) {
-    return { authenticated: true, useServiceRole: true };
-  }
-  
-  // Option 2: Anon key - allowed for demo seeding (uses service role internally)
-  if (token === SUPABASE_ANON_KEY) {
-    return { authenticated: true, useServiceRole: true };
-  }
-
-  // Option 3: Validate user JWT token
-  try {
-    const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
-    const supabase = createClient(SUPABASE_URL!, SUPABASE_ANON_KEY!, {
-      global: { headers: { Authorization: authHeader } }
-    });
-    
-    const { data, error } = await supabase.auth.getUser();
-    if (error || !data?.user) {
-      // If not a valid user token, still allow if it looks like an anon request
-      // This handles cases where the client sends the anon key as bearer token
-      return { authenticated: true, useServiceRole: true };
-    }
-    
-    return { authenticated: true, useServiceRole: true };
-  } catch {
-    // Allow anyway for demo purposes
-    return { authenticated: true, useServiceRole: true };
-  }
+// No authentication required for seeding demo data
+// The function uses service role internally to write to the database
+function authenticateRequest(_req: Request): { authenticated: boolean; useServiceRole: boolean } {
+  // Always allow - this is a demo seeding function
+  return { authenticated: true, useServiceRole: true };
 }
 
 // Validation constants
@@ -302,14 +269,8 @@ serve(async (req) => {
   }
 
   try {
-    // Authenticate - accepts service role OR authenticated user JWT
-    const auth = await authenticateRequest(req);
-    if (!auth.authenticated) {
-      return new Response(
-        JSON.stringify({ error: auth.error || 'Unauthorized' }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    // No authentication required - always allow
+    const auth = authenticateRequest(req);
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;

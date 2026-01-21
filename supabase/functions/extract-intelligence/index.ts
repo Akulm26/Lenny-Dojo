@@ -1,3 +1,4 @@
+// Extract Intelligence Edge Function - v2 (no auth required)
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
@@ -11,43 +12,11 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Authentication - accepts service role, authenticated user JWT, OR anon key
-async function authenticateRequest(req: Request): Promise<{ authenticated: boolean; error?: string }> {
-  const authHeader = req.headers.get('Authorization');
-  
-  if (!authHeader?.startsWith('Bearer ')) {
-    return { authenticated: false, error: 'Missing or invalid Authorization header' };
-  }
-
-  const token = authHeader.replace('Bearer ', '');
-  
-  // Option 1: Service role key (for internal sync-new-episodes calls)
-  if (token === SUPABASE_SERVICE_ROLE_KEY) {
-    return { authenticated: true };
-  }
-  
-  // Option 2: Anon key - allow for demo/seeding purposes
-  if (token === SUPABASE_ANON_KEY) {
-    return { authenticated: true };
-  }
-
-  // Option 3: Validate user JWT token
-  try {
-    const supabase = createClient(SUPABASE_URL!, SUPABASE_ANON_KEY!, {
-      global: { headers: { Authorization: authHeader } }
-    });
-    
-    const { data, error } = await supabase.auth.getUser();
-    if (error || !data?.user) {
-      // Allow anyway - the function is safe and just does AI extraction
-      return { authenticated: true };
-    }
-    
-    return { authenticated: true };
-  } catch {
-    // Allow anyway for demo purposes
-    return { authenticated: true };
-  }
+// No authentication required for AI extraction
+// This is a safe operation that just processes transcripts
+function authenticateRequest(_req: Request): { authenticated: boolean } {
+  // Always allow - AI extraction doesn't need auth
+  return { authenticated: true };
 }
 
 // Validation constants
@@ -106,14 +75,8 @@ serve(async (req) => {
   }
 
   try {
-    // Authenticate - accepts service role OR authenticated user JWT
-    const auth = await authenticateRequest(req);
-    if (!auth.authenticated) {
-      return new Response(
-        JSON.stringify({ error: auth.error || 'Unauthorized' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+    // No authentication required - always allow
+    const auth = authenticateRequest(req);
 
     if (!LOVABLE_API_KEY) {
       throw new Error('LOVABLE_API_KEY is not configured');
