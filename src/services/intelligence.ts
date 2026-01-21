@@ -1,5 +1,6 @@
 import { extractIntelligence, ExtractedIntelligence } from './ai';
 import { Episode } from './github';
+import { getCachedIntelligence, cacheIntelligence } from './intelligenceCache';
 
 // ============================================
 // TYPES
@@ -65,6 +66,102 @@ export interface Framework {
 }
 
 // ============================================
+// HELPER: Aggregate intelligence into maps
+// ============================================
+
+function aggregateIntelligence(
+  intelligence: ExtractedIntelligence,
+  episode: Episode,
+  companiesMap: Map<string, CompanyIntelligence>,
+  frameworksMap: Map<string, Framework>
+) {
+  // Aggregate companies
+  for (const company of intelligence.companies || []) {
+    const key = company.name.toLowerCase();
+    const existing = companiesMap.get(key) || {
+      name: company.name,
+      episode_count: 0,
+      total_decisions: 0,
+      total_opinions: 0,
+      episodes: [],
+      decisions: [],
+      opinions: [],
+      metrics: [],
+      question_seeds: []
+    };
+
+    existing.episode_count++;
+
+    existing.episodes.push({
+      episode_id: episode.id,
+      guest_name: episode.guest,
+      episode_title: episode.title,
+      is_guest_company: company.is_guest_company,
+      context: company.mention_context
+    });
+
+    for (const decision of company.decisions || []) {
+      existing.decisions.push({
+        ...decision,
+        guest_name: episode.guest,
+        episode_id: episode.id
+      });
+      existing.total_decisions++;
+    }
+
+    for (const opinion of company.opinions || []) {
+      existing.opinions.push({
+        ...opinion,
+        guest_name: episode.guest,
+        episode_id: episode.id
+      });
+      existing.total_opinions++;
+    }
+
+    existing.metrics.push(...(company.metrics_mentioned || []));
+
+    companiesMap.set(key, existing);
+  }
+
+  // Aggregate question seeds
+  for (const seed of intelligence.question_seeds || []) {
+    const companyKey = seed.company.toLowerCase();
+    const existing = companiesMap.get(companyKey);
+    if (existing) {
+      existing.question_seeds.push({
+        ...seed,
+        guest_name: episode.guest,
+        episode_id: episode.id,
+        episode_title: episode.title
+      });
+    }
+  }
+
+  // Aggregate frameworks
+  for (const framework of intelligence.frameworks || []) {
+    const key = framework.name.toLowerCase();
+    const existing = frameworksMap.get(key);
+
+    if (existing) {
+      existing.mentioned_in.push({
+        episode_id: episode.id,
+        guest_name: episode.guest,
+        episode_title: episode.title
+      });
+    } else {
+      frameworksMap.set(key, {
+        ...framework,
+        mentioned_in: [{
+          episode_id: episode.id,
+          guest_name: episode.guest,
+          episode_title: episode.title
+        }]
+      });
+    }
+  }
+}
+
+// ============================================
 // EXTRACTION & AGGREGATION
 // ============================================
 
@@ -76,18 +173,55 @@ export async function extractAllIntelligence(
   const companiesMap = new Map<string, CompanyIntelligence>();
   const frameworksMap = new Map<string, Framework>();
 
-  // Process episodes sequentially to avoid rate limits
-  const batchSize = 1;
+  // Check cache first
+  onProgress?.(0, episodes.length, 'Checking cache for previously extracted episodes...');
+  const episodeIds = episodes.map(e => e.id);
+  const cachedIntelligence = await getCachedIntelligence(episodeIds);
+  
+  // Separate cached vs uncached episodes
+  const uncachedEpisodes: Episode[] = [];
+  
+  for (const episode of episodes) {
+    const cached = cachedIntelligence.get(episode.id);
+    if (cached) {
+      // Use cached intelligence
+      aggregateIntelligence(cached, episode, companiesMap, frameworksMap);
+    } else {
+      uncachedEpisodes.push(episode);
+    }
+  }
+  
+  const cachedCount = episodes.length - uncachedEpisodes.length;
+  if (cachedCount > 0) {
+    onProgress?.(cachedCount, episodes.length, `Loaded ${cachedCount} episodes from cache. ${uncachedEpisodes.length} to extract...`);
+  }
+  
+  // If everything is cached, we're done
+  if (uncachedEpisodes.length === 0) {
+    onProgress?.(episodes.length, episodes.length, 'All episodes loaded from cache!');
+    
+    const companies = Array.from(companiesMap.values())
+      .sort((a, b) => b.episode_count - a.episode_count);
+    const frameworks = Array.from(frameworksMap.values())
+      .sort((a, b) => b.mentioned_in.length - a.mentioned_in.length);
+    
+    return { companies, frameworks };
+  }
 
-  // If the backend starts rate limiting or requires payment, stop early and surface
-  // a helpful error so the UI doesn't look "empty" with no explanation.
+  // Process uncached episodes sequentially to avoid rate limits
+  const batchSize = 1;
   let sawRateLimit = false;
   let sawPaymentRequired = false;
 
-  for (let i = 0; i < episodes.length; i += batchSize) {
-    const batch = episodes.slice(i, i + batchSize);
+  for (let i = 0; i < uncachedEpisodes.length; i += batchSize) {
+    const batch = uncachedEpisodes.slice(i, i + batchSize);
+    const overallProgress = cachedCount + i;
 
-    onProgress?.(i, episodes.length, `Analyzing episode ${i + 1} of ${episodes.length}...`);
+    onProgress?.(
+      overallProgress, 
+      episodes.length, 
+      `Extracting episode ${i + 1} of ${uncachedEpisodes.length} (${cachedCount} from cache)...`
+    );
 
     const results = await Promise.allSettled(
       batch.map((episode) =>
@@ -101,7 +235,10 @@ export async function extractAllIntelligence(
     );
 
     // Process results
-    results.forEach((result, idx) => {
+    for (let idx = 0; idx < results.length; idx++) {
+      const result = results[idx];
+      const episode = batch[idx];
+      
       if (result.status === 'rejected') {
         const reason = result.reason as any;
         const msg =
@@ -116,102 +253,31 @@ export async function extractAllIntelligence(
         if (msg.includes('402') || msg.toLowerCase().includes('payment required')) {
           sawPaymentRequired = true;
         }
-        console.warn(`Failed to extract from ${batch[idx].id}:`, result.reason);
-        return;
+        console.warn(`Failed to extract from ${episode.id}:`, result.reason);
+        continue;
       }
 
       const intelligence = result.value;
-      const episode = batch[idx];
+      
+      // Cache the result for future runs
+      await cacheIntelligence(
+        episode.id,
+        episode.guest,
+        episode.title,
+        intelligence
+      );
+      
+      // Aggregate into maps
+      aggregateIntelligence(intelligence, episode, companiesMap, frameworksMap);
+    }
 
-      // Aggregate companies
-      for (const company of intelligence.companies || []) {
-        const key = company.name.toLowerCase();
-        const existing = companiesMap.get(key) || {
-          name: company.name,
-          episode_count: 0,
-          total_decisions: 0,
-          total_opinions: 0,
-          episodes: [],
-          decisions: [],
-          opinions: [],
-          metrics: [],
-          question_seeds: []
-        };
-
-        existing.episode_count++;
-
-        existing.episodes.push({
-          episode_id: episode.id,
-          guest_name: episode.guest,
-          episode_title: episode.title,
-          is_guest_company: company.is_guest_company,
-          context: company.mention_context
-        });
-
-        for (const decision of company.decisions || []) {
-          existing.decisions.push({
-            ...decision,
-            guest_name: episode.guest,
-            episode_id: episode.id
-          });
-          existing.total_decisions++;
-        }
-
-        for (const opinion of company.opinions || []) {
-          existing.opinions.push({
-            ...opinion,
-            guest_name: episode.guest,
-            episode_id: episode.id
-          });
-          existing.total_opinions++;
-        }
-
-        existing.metrics.push(...(company.metrics_mentioned || []));
-
-        companiesMap.set(key, existing);
-      }
-
-      // Aggregate question seeds
-      for (const seed of intelligence.question_seeds || []) {
-        const companyKey = seed.company.toLowerCase();
-        const existing = companiesMap.get(companyKey);
-        if (existing) {
-          existing.question_seeds.push({
-            ...seed,
-            guest_name: episode.guest,
-            episode_id: episode.id,
-            episode_title: episode.title
-          });
-        }
-      }
-
-      // Aggregate frameworks
-      for (const framework of intelligence.frameworks || []) {
-        const key = framework.name.toLowerCase();
-        const existing = frameworksMap.get(key);
-
-        if (existing) {
-          existing.mentioned_in.push({
-            episode_id: episode.id,
-            guest_name: episode.guest,
-            episode_title: episode.title
-          });
-        } else {
-          frameworksMap.set(key, {
-            ...framework,
-            mentioned_in: [{
-              episode_id: episode.id,
-              guest_name: episode.guest,
-              episode_title: episode.title
-            }]
-          });
-        }
-      }
-    });
+    // Stop early if we hit payment or rate limit issues
+    if (sawPaymentRequired || sawRateLimit) {
+      break;
+    }
 
     // Delay between batches to avoid rate limits
-    if (i + batchSize < episodes.length) {
-      // A bit of jitter helps avoid "thundering herd" if multiple users sync at once.
+    if (i + batchSize < uncachedEpisodes.length) {
       const jitter = Math.floor(Math.random() * 600);
       await new Promise((r) => setTimeout(r, 2500 + jitter));
     }

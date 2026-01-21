@@ -14,7 +14,36 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      episode_intelligence_cache: {
+        Row: {
+          created_at: string
+          episode_id: string
+          episode_title: string
+          extracted_at: string
+          guest_name: string
+          id: string
+          intelligence: Json
+        }
+        Insert: {
+          created_at?: string
+          episode_id: string
+          episode_title: string
+          extracted_at?: string
+          guest_name: string
+          id?: string
+          intelligence: Json
+        }
+        Update: {
+          created_at?: string
+          episode_id?: string
+          episode_title?: string
+          extracted_at?: string
+          guest_name?: string
+          id?: string
+          intelligence?: Json
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
