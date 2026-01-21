@@ -262,8 +262,8 @@ export default function Settings() {
               </div>
               
               <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Companies loaded</span>
-                <span>{syncMetadata?.total_episodes || 0}</span>
+                <span className="text-muted-foreground">Episodes cached</span>
+                <span>{cacheCount}</span>
               </div>
               
               {/* Show sync status message */}

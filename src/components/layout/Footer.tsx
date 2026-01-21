@@ -3,8 +3,8 @@ import { useDojoData } from '@/contexts/DojoDataContext';
 
 export const Footer = forwardRef<HTMLElement>(function Footer(_, ref) {
   const { totalEpisodes, lastSyncDate, latestTranscriptDate, isLoading } = useDojoData();
-  
-  const episodeCount = totalEpisodes || 284;
+
+  const episodeCount = totalEpisodes;
   const formattedSyncDate = lastSyncDate 
     ? new Date(lastSyncDate).toLocaleDateString()
     : 'recently';
