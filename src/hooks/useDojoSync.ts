@@ -72,18 +72,14 @@ export function useDojoSync() {
         error: null
       }));
 
-      const episodeIdsAll = await fetchEpisodeList();
-      // Processing every episode with AI is expensive/slow in a browser-driven sync.
-      // Start with a smaller, fast-to-complete subset, and we can expand later.
-      const MAX_EPISODES_TO_PROCESS = 30;
-      const episodeIds = episodeIdsAll.slice(0, MAX_EPISODES_TO_PROCESS);
+      const episodeIds = await fetchEpisodeList();
       const total = episodeIds.length;
 
       setState(prev => ({
         ...prev,
         totalEpisodes: total,
         progress: 5,
-        progressMessage: `Found ${episodeIdsAll.length} episodes. Processing first ${total} for now...`
+        progressMessage: `Found ${total} episodes. Loading transcripts...`
       }));
 
       const episodes: Episode[] = [];
