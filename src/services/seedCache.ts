@@ -1,9 +1,21 @@
 import { supabase } from '@/integrations/supabase/client';
-import { Episode, fetchEpisodeList, fetchAndParseEpisode } from './github';
+import { fetchEpisodeList } from './github';
+
+/**
+ * Convert episode ID (slug) to display name
+ * e.g., "brian-chesky" -> "Brian Chesky"
+ */
+function slugToName(slug: string): string {
+  return slug
+    .split('-')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
 
 /**
  * Seed the intelligence cache with demo data for all episodes.
  * This bypasses the AI extraction and populates the cache directly.
+ * FAST MODE: Uses episode IDs directly without fetching individual transcripts.
  */
 export async function seedIntelligenceCache(
   onProgress?: (current: number, total: number, message: string) => void
@@ -11,39 +23,22 @@ export async function seedIntelligenceCache(
   
   onProgress?.(0, 100, 'Fetching episode list from GitHub...');
   
-  // Get episode list from GitHub
+  // Get episode list from GitHub (single fast API call)
   const episodeIds = await fetchEpisodeList();
   const total = episodeIds.length;
   
-  onProgress?.(0, total, `Found ${total} episodes. Fetching metadata...`);
+  onProgress?.(total * 0.1, total, `Found ${total} episodes. Preparing batch...`);
   
-  // Fetch episode metadata in batches
-  const FETCH_BATCH = 20;
-  const episodes: Array<{ id: string; guest: string; title: string }> = [];
+  // Convert episode IDs to minimal metadata (no individual fetches needed!)
+  const episodes = episodeIds.map(id => ({
+    id,
+    guest: slugToName(id),
+    title: `${slugToName(id)} on Lenny's Podcast`,
+  }));
   
-  for (let i = 0; i < episodeIds.length; i += FETCH_BATCH) {
-    const batch = episodeIds.slice(i, i + FETCH_BATCH);
-    
-    onProgress?.(i, total, `Fetching episode metadata ${i + 1}-${Math.min(i + FETCH_BATCH, total)} of ${total}...`);
-    
-    const results = await Promise.allSettled(
-      batch.map(id => fetchAndParseEpisode(id))
-    );
-    
-    for (const result of results) {
-      if (result.status === 'fulfilled') {
-        episodes.push({
-          id: result.value.id,
-          guest: result.value.guest,
-          title: result.value.title,
-        });
-      }
-    }
-  }
+  onProgress?.(total * 0.2, total, `Seeding cache for ${episodes.length} episodes...`);
   
-  onProgress?.(total, total, `Seeding cache for ${episodes.length} episodes...`);
-  
-  // Call edge function to seed the cache
+  // Call edge function to seed the cache (processes in batches server-side)
   const { data, error } = await supabase.functions.invoke('seed-intelligence-cache', {
     body: { episodes }
   });
