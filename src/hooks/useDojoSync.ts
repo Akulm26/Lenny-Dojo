@@ -14,7 +14,7 @@ import {
   getStoredCompanies,
   getStoredFrameworks
 } from '@/services/github';
-import { extractAllIntelligence, CompanyIntelligence, Framework } from '@/services/intelligence';
+import { extractAllIntelligence, loadCachedCompaniesAndFrameworks, CompanyIntelligence, Framework } from '@/services/intelligence';
 
 interface DojoSyncState {
   status: 'idle' | 'checking' | 'syncing' | 'processing' | 'complete' | 'error';
@@ -43,23 +43,59 @@ export function useDojoSync() {
     latestTranscriptDate: null
   });
 
-  // Load cached data on mount
+  // Load cached data on mount - try Supabase first, then localStorage
   useEffect(() => {
-    const syncStatus = getSyncStatus();
-    const episodes = getStoredEpisodes();
-    const companies = getStoredCompanies<CompanyIntelligence>();
-    const frameworks = getStoredFrameworks<Framework>();
-
-    setState(prev => ({
-      ...prev,
-      episodes,
-      companies,
-      frameworks,
-      totalEpisodes: episodes.length,
-      lastSyncDate: syncStatus.last_sync,
-      latestTranscriptDate: syncStatus.latest_episode_date,
-      status: episodes.length > 0 ? 'complete' : 'idle'
-    }));
+    const loadInitialData = async () => {
+      // First check localStorage for quick load
+      const localCompanies = getStoredCompanies<CompanyIntelligence>();
+      const localFrameworks = getStoredFrameworks<Framework>();
+      
+      if (localCompanies.length > 0 && localFrameworks.length > 0) {
+        const syncStatus = getSyncStatus();
+        const episodes = getStoredEpisodes();
+        setState(prev => ({
+          ...prev,
+          episodes,
+          companies: localCompanies,
+          frameworks: localFrameworks,
+          totalEpisodes: episodes.length,
+          lastSyncDate: syncStatus.last_sync,
+          latestTranscriptDate: syncStatus.latest_episode_date,
+          status: 'complete'
+        }));
+        return;
+      }
+      
+      // No localStorage data - try loading from Supabase cache
+      setState(prev => ({ ...prev, status: 'checking', progressMessage: 'Loading from database...' }));
+      
+      try {
+        const { companies, frameworks } = await loadCachedCompaniesAndFrameworks();
+        
+        if (companies.length > 0) {
+          // Store in localStorage for future quick loads
+          storeCompanies(companies);
+          storeFrameworks(frameworks);
+          
+          setState(prev => ({
+            ...prev,
+            companies,
+            frameworks,
+            totalEpisodes: companies.length > 0 ? companies[0].episode_count : 0,
+            status: 'complete',
+            progressMessage: `Loaded ${companies.length} companies from cache`
+          }));
+          return;
+        }
+      } catch (e) {
+        console.warn('Failed to load from Supabase cache:', e);
+      }
+      
+      // No data anywhere - stay idle and wait for sync
+      setState(prev => ({ ...prev, status: 'idle' }));
+    };
+    
+    loadInitialData();
   }, []);
 
   const performFullSync = useCallback(async () => {
@@ -187,26 +223,43 @@ export function useDojoSync() {
   }, []);
 
   const checkAndSyncIfNeeded = useCallback(async () => {
-    // If we already have cached data, just mark as complete
-    const cachedCompanies = getStoredCompanies<CompanyIntelligence>();
-    const cachedFrameworks = getStoredFrameworks<Framework>();
-    
-    if (cachedCompanies.length > 0 && cachedFrameworks.length > 0) {
+    // If we already have data in state, no need to sync
+    if (state.companies.length > 0 && state.frameworks.length > 0) {
       setState(prev => ({ 
         ...prev, 
         status: 'complete', 
-        progressMessage: 'Loaded from cache',
-        companies: cachedCompanies,
-        frameworks: cachedFrameworks
+        progressMessage: 'Data already loaded'
       }));
       return;
     }
     
+    // Try to load from Supabase cache first
+    setState(prev => ({ ...prev, status: 'checking', progressMessage: 'Checking cache...' }));
+    
     try {
-      setState(prev => ({ ...prev, status: 'checking', progressMessage: 'Checking for new episodes...' }));
+      const { companies, frameworks } = await loadCachedCompaniesAndFrameworks();
+      
+      if (companies.length > 0) {
+        storeCompanies(companies);
+        storeFrameworks(frameworks);
+        
+        setState(prev => ({ 
+          ...prev, 
+          status: 'complete', 
+          progressMessage: `Loaded ${companies.length} companies`,
+          companies,
+          frameworks
+        }));
+        return;
+      }
+    } catch (e) {
+      console.warn('Cache check failed:', e);
+    }
+    
+    // No cached data - perform full sync
+    try {
       const { hasUpdates } = await checkForUpdates();
-
-      if (hasUpdates || cachedCompanies.length === 0) {
+      if (hasUpdates || state.companies.length === 0) {
         setState(prev => ({ ...prev, progressMessage: 'Syncing episodes...' }));
         await performFullSync();
       } else {
@@ -220,7 +273,7 @@ export function useDojoSync() {
         error: error instanceof Error ? error.message : 'Failed to check for updates'
       }));
     }
-  }, [performFullSync]);
+  }, [performFullSync, state.companies.length, state.frameworks.length]);
 
   const manualSync = useCallback(() => {
     performFullSync();
