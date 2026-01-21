@@ -11,7 +11,6 @@ import {
   Check,
   Database,
   Loader2,
-  Zap
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import {
@@ -29,7 +28,6 @@ import { seedIntelligenceCache, getCacheStatus } from '@/services/seedCache';
 import { Progress } from '@/components/ui/progress';
 import { useDojoData } from '@/contexts/DojoDataContext';
 import { clearAllCache } from '@/services/github';
-import { clearIntelligenceCache } from '@/services/intelligenceCache';
 
 export default function Settings() {
   const { syncMetadata, isSyncing, setIsSyncing } = useSyncStore();
@@ -42,7 +40,7 @@ export default function Settings() {
   const [isSeeding, setIsSeeding] = useState(false);
   const [seedProgress, setSeedProgress] = useState({ current: 0, total: 0, message: '' });
   const [seedResult, setSeedResult] = useState<string | null>(null);
-  const [isForceExtracting, setIsForceExtracting] = useState(false);
+  
   
   // Load cache status on mount
   useEffect(() => {
@@ -74,27 +72,6 @@ export default function Settings() {
     } finally {
       setIsSeeding(false);
       setTimeout(() => setSeedResult(null), 5000);
-    }
-  };
-  
-  const handleForceExtract = async () => {
-    setIsForceExtracting(true);
-    setSyncResult(null);
-    
-    try {
-      // Clear all caches
-      await clearIntelligenceCache();
-      clearAllCache();
-      setCacheCount(0);
-      
-      // Trigger full sync with AI extraction
-      sync();
-      setSyncResult('Extraction started!');
-    } catch (error) {
-      console.error('Force extract error:', error);
-      setSyncResult('Error: ' + (error instanceof Error ? error.message : 'Unknown'));
-    } finally {
-      setIsForceExtracting(false);
     }
   };
   
@@ -222,10 +199,10 @@ export default function Settings() {
                 </div>
               )}
               
-              <div className="flex gap-2 pt-2">
+              <div className="pt-2">
                 <Button
                   onClick={handleCheckUpdates}
-                  disabled={status === 'syncing' || status === 'processing' || isForceExtracting}
+                  disabled={status === 'syncing' || status === 'processing'}
                   className="gap-2"
                 >
                   {status === 'syncing' || status === 'processing' ? (
@@ -240,34 +217,6 @@ export default function Settings() {
                     </>
                   )}
                 </Button>
-                
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button
-                      variant="outline"
-                      disabled={status === 'syncing' || status === 'processing' || isForceExtracting}
-                      className="gap-2"
-                    >
-                      <Zap className="h-4 w-4" />
-                      Force AI Extraction
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Force AI Extraction?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        This will clear all cached intelligence and re-extract from all 303 episodes using real AI. 
-                        This requires Lovable AI credits and will take several minutes.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction onClick={handleForceExtract}>
-                        Start Extraction
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
               </div>
             </div>
           </section>
