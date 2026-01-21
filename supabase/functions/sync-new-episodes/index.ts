@@ -40,7 +40,7 @@ const GITHUB_RAW_BASE = 'https://raw.githubusercontent.com/ChatPRD/lennys-podcas
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
 
 async function fetchEpisodeList(): Promise<string[]> {
-  const response = await fetch(`${GITHUB_API_BASE}/contents/transcripts`, {
+  const response = await fetch(`${GITHUB_API_BASE}/contents/episodes`, {
     headers: { 'Accept': 'application/vnd.github.v3+json' },
   });
   
@@ -57,7 +57,7 @@ async function fetchEpisodeList(): Promise<string[]> {
 async function fetchEpisodeContent(episodeId: string): Promise<{ guest: string; title: string; transcript: string } | null> {
   try {
     const response = await fetch(
-      `${GITHUB_RAW_BASE}/transcripts/${episodeId}/transcript.md`
+      `${GITHUB_RAW_BASE}/episodes/${episodeId}/transcript.md`
     );
     
     if (!response.ok) return null;
