@@ -6,48 +6,20 @@ import {
   Loader2,
   ChevronDown,
   ChevronUp,
-  Quote,
-  ArrowRight,
   Home,
   Dumbbell,
   CheckCircle2,
   AlertCircle,
-  Lightbulb
+  Lightbulb,
+  RefreshCw
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { INTERVIEW_TYPE_INFO } from '@/types';
-import type { Question, EvaluationResult } from '@/types';
+import type { InterviewType } from '@/types';
 import { useProgressStore } from '@/stores/progressStore';
-
-// Demo evaluation - in production this comes from AI
-const DEMO_EVALUATION: EvaluationResult = {
-  overall_score: 7.2,
-  dimension_scores: {
-    structure: { score: 8, justification: "Well-organized answer with clear problem framing and logical solution progression." },
-    insight: { score: 7, justification: "Good understanding of marketplace dynamics, but could dig deeper into host psychology." },
-    framework_usage: { score: 6, justification: "Mentioned prioritization but didn't explicitly use frameworks like RICE or North Star." },
-    communication: { score: 8, justification: "Clear and concise communication. Easy to follow your reasoning." },
-    outcome_orientation: { score: 7, justification: "Good focus on metrics, but could better articulate expected impact and success criteria." },
-  },
-  strengths: [
-    "Strong problem framing that showed you understood the core challenge",
-    "Good balance between quick wins and longer-term solutions",
-  ],
-  areas_to_improve: [
-    "Explicitly reference PM frameworks to structure your approach",
-    "Quantify expected impact when proposing solutions",
-  ],
-  missed_elements: [
-    "The importance of professional photography (2.5x booking improvement)",
-    "Setting realistic host expectations during onboarding",
-  ],
-  suggested_quote: {
-    text: "The first booking is everything. It's not just revenue - it's validation that this can work for them.",
-    guest_name: "Brian Chesky",
-    episode_id: "brian-chesky-1"
-  },
-  encouraging_note: "Strong answer! You're building good PM instincts. A few more practice rounds focusing on frameworks will take you to the next level."
-};
+import { evaluateAnswer } from '@/services/practiceService';
+import type { GeneratedQuestion, AnswerEvaluation } from '@/services/ai';
+import { toast } from 'sonner';
 
 const ScoreBar = ({ score, label }: { score: number; label: string }) => (
   <div className="space-y-1">
@@ -71,10 +43,16 @@ export default function Evaluation() {
   const location = useLocation();
   const navigate = useNavigate();
   
-  const { question, answer, timeSpent } = location.state || {};
+  const { question, answer, timeSpent } = location.state as {
+    question: GeneratedQuestion;
+    answer: string;
+    timeSpent: number;
+  } || {};
   
   const [isLoading, setIsLoading] = useState(true);
-  const [evaluation, setEvaluation] = useState<EvaluationResult | null>(null);
+  const [loadingStep, setLoadingStep] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [evaluation, setEvaluation] = useState<AnswerEvaluation | null>(null);
   const [showWhatHappened, setShowWhatHappened] = useState(false);
   const [showModelAnswer, setShowModelAnswer] = useState(false);
   
@@ -86,34 +64,62 @@ export default function Evaluation() {
       return;
     }
     
-    // Simulate AI evaluation
-    const timer = setTimeout(() => {
-      setEvaluation(DEMO_EVALUATION);
+    runEvaluation();
+  }, []);
+  
+  const runEvaluation = async () => {
+    setIsLoading(true);
+    setError(null);
+    setLoadingStep(0);
+    
+    // Animate loading steps
+    const stepInterval = setInterval(() => {
+      setLoadingStep(prev => Math.min(prev + 1, 2));
+    }, 1500);
+    
+    try {
+      const result = await evaluateAnswer({
+        question: question.question,
+        situationBrief: question.situation_brief,
+        userAnswer: answer,
+        modelAnswer: question.model_answer,
+        interviewType: question.type,
+        guestName: question.source?.guest_name || 'the guest',
+        episodeTitle: question.source?.episode_title || 'Lenny\'s Podcast',
+      });
+      
+      clearInterval(stepInterval);
+      setEvaluation(result);
       setIsLoading(false);
       
       // Record the attempt
       addAttempt({
         question_id: question.id,
-        type: question.type,
+        type: question.type as InterviewType,
         company: question.company,
         user_answer: answer,
-        overall_score: DEMO_EVALUATION.overall_score,
+        overall_score: result.overall_score,
         dimension_scores: {
-          structure: DEMO_EVALUATION.dimension_scores.structure.score,
-          insight: DEMO_EVALUATION.dimension_scores.insight.score,
-          framework_usage: DEMO_EVALUATION.dimension_scores.framework_usage.score,
-          communication: DEMO_EVALUATION.dimension_scores.communication.score,
-          outcome_orientation: DEMO_EVALUATION.dimension_scores.outcome_orientation.score,
+          structure: result.dimension_scores.structure.score,
+          insight: result.dimension_scores.insight.score,
+          framework_usage: result.dimension_scores.framework_usage.score,
+          communication: result.dimension_scores.communication.score,
+          outcome_orientation: result.dimension_scores.outcome_orientation.score,
         },
         time_spent_seconds: timeSpent || 0,
         attempted_at: new Date().toISOString(),
       });
       
       endSession();
-    }, 3000);
-    
-    return () => clearTimeout(timer);
-  }, [question, answer, navigate, addAttempt, endSession, timeSpent]);
+    } catch (err) {
+      clearInterval(stepInterval);
+      console.error('Evaluation failed:', err);
+      const message = err instanceof Error ? err.message : 'Failed to evaluate answer';
+      setError(message);
+      setIsLoading(false);
+      toast.error(message);
+    }
+  };
   
   if (isLoading) {
     return (
@@ -126,16 +132,34 @@ export default function Evaluation() {
             <h2 className="text-xl font-semibold mb-4">📊 Evaluating your answer...</h2>
             
             <div className="space-y-2 text-sm text-muted-foreground">
-              <p className="flex items-center justify-center gap-2">
-                <CheckCircle2 className="h-4 w-4 text-success" />
+              <p className={cn(
+                "flex items-center justify-center gap-2",
+                loadingStep >= 0 && "text-foreground"
+              )}>
+                <CheckCircle2 className={cn("h-4 w-4", loadingStep >= 0 ? "text-success" : "text-muted")} />
                 Reading your response
               </p>
-              <p className="flex items-center justify-center gap-2 animate-pulse">
-                <Loader2 className="h-4 w-4 animate-spin" />
+              <p className={cn(
+                "flex items-center justify-center gap-2",
+                loadingStep >= 1 ? "text-foreground" : "text-muted-foreground/50"
+              )}>
+                {loadingStep >= 1 ? (
+                  <CheckCircle2 className="h-4 w-4 text-success" />
+                ) : (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                )}
                 Comparing with expert insights
               </p>
-              <p className="text-muted-foreground/50">
-                Generating feedback
+              <p className={cn(
+                "flex items-center justify-center gap-2",
+                loadingStep >= 2 ? "text-foreground" : "text-muted-foreground/50"
+              )}>
+                {loadingStep >= 2 ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <span className="h-4 w-4" />
+                )}
+                Generating personalized feedback
               </p>
             </div>
           </div>
@@ -144,9 +168,32 @@ export default function Evaluation() {
     );
   }
   
+  if (error) {
+    return (
+      <Layout showFooter={false}>
+        <div className="container py-16 text-center">
+          <div className="p-4 rounded-full bg-destructive/10 text-destructive w-fit mx-auto mb-6">
+            <AlertCircle className="h-8 w-8" />
+          </div>
+          <h2 className="text-xl font-semibold mb-2">Evaluation failed</h2>
+          <p className="text-muted-foreground mb-6">{error}</p>
+          <div className="flex gap-3 justify-center">
+            <Button onClick={runEvaluation} className="gap-2">
+              <RefreshCw className="h-4 w-4" />
+              Try Again
+            </Button>
+            <Button variant="outline" onClick={() => navigate('/practice')}>
+              Back to Practice
+            </Button>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+  
   if (!evaluation) return null;
   
-  const typeInfo = INTERVIEW_TYPE_INFO[question.type];
+  const typeInfo = INTERVIEW_TYPE_INFO[question.type as InterviewType];
   
   const getScoreMessage = (score: number) => {
     if (score >= 9) return "Exceptional. You think like the best PMs.";
@@ -190,7 +237,7 @@ export default function Evaluation() {
               What You Did Well
             </h3>
             <ul className="space-y-2 text-sm">
-              {evaluation.strengths.map((s, i) => (
+              {evaluation.strengths?.map((s, i) => (
                 <li key={i} className="flex items-start gap-2">
                   <span className="text-success">•</span>
                   {s}
@@ -205,7 +252,7 @@ export default function Evaluation() {
               How to Improve
             </h3>
             <ul className="space-y-2 text-sm">
-              {evaluation.areas_to_improve.map((a, i) => (
+              {evaluation.improvements?.map((a, i) => (
                 <li key={i} className="flex items-start gap-2">
                   <span className="text-warning">•</span>
                   {a}
@@ -215,19 +262,39 @@ export default function Evaluation() {
           </div>
         </div>
         
+        {/* Missed from podcast */}
+        {evaluation.missed_from_podcast && evaluation.missed_from_podcast.length > 0 && (
+          <div className="p-5 rounded-xl border border-muted bg-muted/30 mb-6">
+            <h3 className="font-semibold mb-3 flex items-center gap-2">
+              <Lightbulb className="h-5 w-5 text-primary" />
+              Insights from the Podcast You Could Use
+            </h3>
+            <ul className="space-y-2 text-sm">
+              {evaluation.missed_from_podcast.map((m, i) => (
+                <li key={i} className="flex items-start gap-2">
+                  <span className="text-primary">•</span>
+                  {m}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        
         {/* Insight Quote */}
-        <div className="p-5 rounded-xl border border-primary/30 bg-primary/5 mb-6">
-          <h3 className="font-semibold mb-3 flex items-center gap-2">
-            <Lightbulb className="h-5 w-5 text-primary" />
-            Insight from the Dojo
-          </h3>
-          <blockquote className="quote-block text-sm">
-            "{evaluation.suggested_quote.text}"
-          </blockquote>
-          <p className="text-sm text-muted-foreground mt-2">
-            — {evaluation.suggested_quote.guest_name}
-          </p>
-        </div>
+        {evaluation.quote_to_remember && (
+          <div className="p-5 rounded-xl border border-primary/30 bg-primary/5 mb-6">
+            <h3 className="font-semibold mb-3 flex items-center gap-2">
+              <Lightbulb className="h-5 w-5 text-primary" />
+              Quote to Remember
+            </h3>
+            <blockquote className="quote-block text-sm">
+              "{evaluation.quote_to_remember.text}"
+            </blockquote>
+            <p className="text-sm text-muted-foreground mt-2">
+              {evaluation.quote_to_remember.why_it_matters}
+            </p>
+          </div>
+        )}
         
         {/* What Actually Happened */}
         <button
@@ -241,9 +308,14 @@ export default function Evaluation() {
         {showWhatHappened && question.model_answer && (
           <div className="p-5 rounded-lg border border-border bg-surface mb-6 animate-fade-in">
             <p className="text-sm text-muted-foreground mb-2">
-              According to {question.source_guest}:
+              According to {question.source?.guest_name || 'the guest'}:
             </p>
             <p className="text-sm mb-4">{question.model_answer.what_happened}</p>
+            {question.model_answer.key_quote && (
+              <blockquote className="text-sm italic border-l-2 border-primary pl-3 mb-4">
+                "{question.model_answer.key_quote}"
+              </blockquote>
+            )}
             <p className="text-xs text-muted-foreground italic">
               ⚠ This reflects the guest's perspective as shared on the podcast.
             </p>
@@ -264,11 +336,11 @@ export default function Evaluation() {
             <h4 className="font-medium mb-2">Key Reasoning</h4>
             <p className="text-sm mb-4">{question.model_answer.key_reasoning}</p>
             
-            {question.model_answer.frameworks_used?.length > 0 && (
+            {question.model_answer.frameworks_mentioned?.length > 0 && (
               <>
-                <h4 className="font-medium mb-2">Frameworks Used</h4>
+                <h4 className="font-medium mb-2">Frameworks Mentioned</h4>
                 <div className="flex flex-wrap gap-2 mb-4">
-                  {question.model_answer.frameworks_used.map((fw, i) => (
+                  {question.model_answer.frameworks_mentioned.map((fw, i) => (
                     <span key={i} className="px-2 py-1 rounded text-xs bg-muted">
                       {fw}
                     </span>
@@ -276,12 +348,19 @@ export default function Evaluation() {
                 </div>
               </>
             )}
+            
+            {question.model_answer.full_answer && (
+              <>
+                <h4 className="font-medium mb-2">Full Answer</h4>
+                <p className="text-sm whitespace-pre-line">{question.model_answer.full_answer}</p>
+              </>
+            )}
           </div>
         )}
         
         {/* Encouraging Note */}
         <p className="text-center text-muted-foreground mb-8">
-          {evaluation.encouraging_note}
+          {evaluation.encouragement}
         </p>
         
         {/* Actions */}

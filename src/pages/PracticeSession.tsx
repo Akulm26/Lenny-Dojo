@@ -11,44 +11,17 @@ import {
   ChevronDown,
   ChevronUp,
   Lightbulb,
-  Send
+  Send,
+  AlertCircle,
+  RefreshCw
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { INTERVIEW_TYPE_INFO, DIFFICULTY_INFO } from '@/types';
-import type { InterviewType, Difficulty, SessionConfig, Question } from '@/types';
+import type { InterviewType, Difficulty, SessionConfig } from '@/types';
 import { useProgressStore } from '@/stores/progressStore';
-
-// Demo question for MVP - in production this comes from AI
-const DEMO_QUESTION: Partial<Question> = {
-  id: 'demo-1',
-  type: 'product_sense',
-  company: 'Airbnb',
-  difficulty: 'medium',
-  suggested_time_minutes: 25,
-  context_era: '2015',
-  situation_brief: `In 2015, Airbnb was experiencing explosive growth but facing a critical challenge. Brian Chesky shared on the podcast that they noticed a troubling pattern: first-time hosts were struggling to get their first booking, with many giving up after just a few weeks.
-
-The data showed that hosts who got their first booking within 2 weeks had a 70% retention rate, while those who waited longer than a month had only a 20% retention rate. The team was debating several approaches to solve this "cold start" problem.
-
-The marketplace had about 500,000 listings at the time, but roughly 40% of new hosts were churning before ever making money on the platform.`,
-  question: `How would you approach solving Airbnb's host "cold start" problem? Walk me through your thinking on how to help new hosts get their first booking faster.`,
-  follow_ups: [
-    "What metrics would you use to measure success?",
-    "How would you prioritize between different solution approaches?",
-    "What are the potential risks of your proposed solution?",
-  ],
-  source_episode_id: 'brian-chesky-1',
-  source_guest: 'Brian Chesky',
-  model_answer: {
-    what_happened: `Airbnb implemented several key initiatives. They created a "Superhost" instant booking feature that reduced friction. They also introduced professional photography services for new hosts, which increased booking rates by 2.5x. Most importantly, they redesigned the new host onboarding to set realistic expectations and provide guidance on competitive pricing.`,
-    key_reasoning: `Brian emphasized focusing on the "moment of truth" - the first booking experience. They learned that host quality signals (photos, reviews) mattered more than they initially thought. The approach was to remove friction and build host confidence simultaneously.`,
-    quotes: [
-      { text: "The first booking is everything. It's not just revenue - it's validation that this can work for them.", guest_name: 'Brian Chesky', episode_id: 'brian-chesky-1' }
-    ],
-    frameworks_used: ['North Star Metric', 'Jobs to Be Done'],
-    full_answer: 'Focus on reducing time-to-first-booking as the key metric...',
-  },
-};
+import { getRandomCompanyContext, generateQuestion, CompanyContext } from '@/services/practiceService';
+import type { GeneratedQuestion } from '@/services/ai';
+import { toast } from 'sonner';
 
 export default function PracticeSession() {
   const location = useLocation();
@@ -62,31 +35,70 @@ export default function PracticeSession() {
   };
   
   const [isLoading, setIsLoading] = useState(true);
-  const [question, setQuestion] = useState<Partial<Question> | null>(null);
+  const [loadingMessage, setLoadingMessage] = useState('Finding a scenario from the podcast archive...');
+  const [error, setError] = useState<string | null>(null);
+  const [question, setQuestion] = useState<GeneratedQuestion | null>(null);
+  const [companyContext, setCompanyContext] = useState<CompanyContext | null>(null);
   const [answer, setAnswer] = useState('');
   const [showFollowUps, setShowFollowUps] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [timeSpent, setTimeSpent] = useState(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   
-  const { startSession, addAttempt } = useProgressStore();
+  const { startSession } = useProgressStore();
   
   // Load question on mount
   useEffect(() => {
     startSession();
+    loadQuestion();
     
-    // Simulate loading
-    const timer = setTimeout(() => {
-      setQuestion(DEMO_QUESTION);
-      setIsLoading(false);
-    }, 2000);
-    
-    return () => clearTimeout(timer);
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
   }, []);
+  
+  const loadQuestion = async () => {
+    setIsLoading(true);
+    setError(null);
+    setLoadingMessage('Finding a scenario from the podcast archive...');
+    
+    try {
+      // Step 1: Get random company context from cache
+      const context = await getRandomCompanyContext(config);
+      
+      if (!context) {
+        throw new Error('No practice scenarios available. Please sync the data first.');
+      }
+      
+      setCompanyContext(context);
+      setLoadingMessage(`Crafting a question about ${context.companyName}...`);
+      
+      // Step 2: Pick a random interview type from config
+      const randomType = config.interview_types[
+        Math.floor(Math.random() * config.interview_types.length)
+      ];
+      
+      // Step 3: Generate question using Lovable AI
+      const generatedQuestion = await generateQuestion(
+        randomType,
+        config.difficulty,
+        context
+      );
+      
+      setQuestion(generatedQuestion);
+      setIsLoading(false);
+    } catch (err) {
+      console.error('Failed to load question:', err);
+      const message = err instanceof Error ? err.message : 'Failed to load question';
+      setError(message);
+      setIsLoading(false);
+      toast.error(message);
+    }
+  };
   
   // Timer
   useEffect(() => {
-    if (!isLoading && !isSubmitting) {
+    if (!isLoading && !isSubmitting && !error) {
       timerRef.current = setInterval(() => {
         setTimeSpent(prev => prev + 1);
       }, 1000);
@@ -95,7 +107,7 @@ export default function PracticeSession() {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [isLoading, isSubmitting]);
+  }, [isLoading, isSubmitting, error]);
   
   const handleSubmit = async () => {
     if (!answer.trim() || !question) return;
@@ -110,6 +122,7 @@ export default function PracticeSession() {
         answer,
         timeSpent,
         config,
+        companyContext,
       }
     });
   };
@@ -130,26 +143,43 @@ export default function PracticeSession() {
             </div>
             <h2 className="text-xl font-semibold mb-2">🎯 Preparing your challenge...</h2>
             <p className="text-muted-foreground">
-              Crafting a scenario from {DEMO_QUESTION.source_guest}'s experience
+              {loadingMessage}
             </p>
+            {companyContext && (
+              <p className="text-sm text-muted-foreground mt-2">
+                Based on {companyContext.guestName}'s insights
+              </p>
+            )}
           </div>
         </div>
       </Layout>
     );
   }
   
-  if (!question) {
+  if (error) {
     return (
       <Layout showFooter={false}>
         <div className="container py-16 text-center">
-          <p>Something went wrong. Please try again.</p>
-          <Button onClick={() => navigate('/practice')} className="mt-4">
-            Back to Practice
-          </Button>
+          <div className="p-4 rounded-full bg-destructive/10 text-destructive w-fit mx-auto mb-6">
+            <AlertCircle className="h-8 w-8" />
+          </div>
+          <h2 className="text-xl font-semibold mb-2">Couldn't load question</h2>
+          <p className="text-muted-foreground mb-6">{error}</p>
+          <div className="flex gap-3 justify-center">
+            <Button onClick={loadQuestion} className="gap-2">
+              <RefreshCw className="h-4 w-4" />
+              Try Again
+            </Button>
+            <Button variant="outline" onClick={() => navigate('/practice')}>
+              Back to Practice
+            </Button>
+          </div>
         </div>
       </Layout>
     );
   }
+  
+  if (!question) return null;
   
   const typeInfo = INTERVIEW_TYPE_INFO[question.type as InterviewType];
   const diffInfo = DIFFICULTY_INFO[question.difficulty as Difficulty];
@@ -159,15 +189,15 @@ export default function PracticeSession() {
       <div className="container py-6 md:py-10 max-w-4xl">
         {/* Header badges */}
         <div className="flex flex-wrap items-center gap-2 mb-6">
-          <span className={cn('interview-badge', typeInfo.color)}>
-            {typeInfo.icon} {typeInfo.label}
+          <span className={cn('interview-badge', typeInfo?.color)}>
+            {typeInfo?.icon} {typeInfo?.label}
           </span>
           <span className="interview-badge bg-muted border-border">
             <Building2 className="h-3 w-3" />
             {question.company}
           </span>
-          <span className={cn('interview-badge', diffInfo.color)}>
-            {diffInfo.label}
+          <span className={cn('interview-badge', diffInfo?.color)}>
+            {diffInfo?.label}
           </span>
           <span className="interview-badge bg-muted border-border">
             <Clock className="h-3 w-3" />
@@ -177,6 +207,13 @@ export default function PracticeSession() {
             {formatTime(timeSpent)}
           </span>
         </div>
+        
+        {/* Source info */}
+        {question.source && (
+          <p className="text-xs text-muted-foreground mb-4">
+            Based on "{question.source.episode_title}" with {question.source.guest_name}
+          </p>
+        )}
         
         {/* Situation */}
         <div className="mb-6">
@@ -201,21 +238,25 @@ export default function PracticeSession() {
         </div>
         
         {/* Follow-ups hint */}
-        <button
-          onClick={() => setShowFollowUps(!showFollowUps)}
-          className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6"
-        >
-          <Lightbulb className="h-4 w-4" />
-          Interviewer may ask...
-          {showFollowUps ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-        </button>
-        
-        {showFollowUps && (
-          <ul className="mb-6 space-y-2 pl-4 border-l-2 border-muted animate-fade-in">
-            {question.follow_ups?.map((fu, i) => (
-              <li key={i} className="text-sm text-muted-foreground">• {fu}</li>
-            ))}
-          </ul>
+        {question.follow_ups && question.follow_ups.length > 0 && (
+          <>
+            <button
+              onClick={() => setShowFollowUps(!showFollowUps)}
+              className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6"
+            >
+              <Lightbulb className="h-4 w-4" />
+              Interviewer may ask...
+              {showFollowUps ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </button>
+            
+            {showFollowUps && (
+              <ul className="mb-6 space-y-2 pl-4 border-l-2 border-muted animate-fade-in">
+                {question.follow_ups.map((fu, i) => (
+                  <li key={i} className="text-sm text-muted-foreground">• {fu}</li>
+                ))}
+              </ul>
+            )}
+          </>
         )}
         
         {/* Answer input */}
