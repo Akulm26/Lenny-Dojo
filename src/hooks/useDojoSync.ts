@@ -15,6 +15,7 @@ import {
   clearTranscriptCache
 } from '@/services/github';
 import { extractAllIntelligence, loadCachedCompaniesAndFrameworks, CompanyIntelligence, Framework } from '@/services/intelligence';
+import { getCacheStatus } from '@/services/seedCache';
 
 interface DojoSyncState {
   status: 'idle' | 'checking' | 'syncing' | 'processing' | 'complete' | 'error';
@@ -49,6 +50,16 @@ export function useDojoSync() {
     clearTranscriptCache();
     
     const loadInitialData = async () => {
+      // Always fetch the authoritative cached-episode count from the database.
+      // This keeps global UI (header/footer) in sync even if localStorage is stale.
+      let cachedEpisodeCount = 0;
+      try {
+        const status = await getCacheStatus();
+        cachedEpisodeCount = status.cached;
+      } catch {
+        // Ignore; we'll fall back to whatever else we can infer.
+      }
+
       // First check localStorage for quick load
       const localCompanies = getStoredCompanies<CompanyIntelligence>();
       const localFrameworks = getStoredFrameworks<Framework>();
@@ -61,7 +72,7 @@ export function useDojoSync() {
           episodes,
           companies: localCompanies,
           frameworks: localFrameworks,
-          totalEpisodes: episodes.length,
+          totalEpisodes: cachedEpisodeCount || episodes.length,
           lastSyncDate: syncStatus.last_sync,
           latestTranscriptDate: syncStatus.latest_episode_date,
           status: 'complete'
@@ -84,7 +95,7 @@ export function useDojoSync() {
             ...prev,
             companies,
             frameworks,
-            totalEpisodes: companies.length > 0 ? companies[0].episode_count : 0,
+            totalEpisodes: cachedEpisodeCount,
             status: 'complete',
             progressMessage: `Loaded ${companies.length} companies from cache`
           }));
@@ -112,6 +123,8 @@ export function useDojoSync() {
         error: null
       }));
 
+      const cacheStatus = await getCacheStatus();
+
       // Load companies and frameworks from Supabase cache
       const { companies, frameworks } = await loadCachedCompaniesAndFrameworks();
       
@@ -124,7 +137,7 @@ export function useDojoSync() {
         updateSyncStatus({
           status: 'complete',
           last_sync: new Date().toISOString(),
-          total_episodes: companies.reduce((sum, c) => sum + (c.episode_count || 0), 0),
+          total_episodes: cacheStatus.cached,
           error_message: null
         });
         
@@ -135,6 +148,7 @@ export function useDojoSync() {
           progressMessage: `Loaded ${companies.length} companies from cache`,
           companies,
           frameworks,
+          totalEpisodes: cacheStatus.cached,
           lastSyncDate: new Date().toISOString(),
         }));
         return;

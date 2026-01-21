@@ -57,14 +57,13 @@ export async function seedIntelligenceCache(
  * Check how many episodes are currently cached
  */
 export async function getCacheStatus(): Promise<{ cached: number }> {
-  const { count, error } = await supabase
-    .from('episode_intelligence_cache')
-    .select('*', { count: 'exact', head: true });
-  
+  // Use a backend function so counts work even when the user is logged out.
+  const { data, error } = await supabase.functions.invoke('get-cache-status');
+
   if (error) {
     console.warn('Failed to get cache status:', error);
     return { cached: 0 };
   }
-  
-  return { cached: count || 0 };
+
+  return { cached: (data?.cached as number) || 0 };
 }

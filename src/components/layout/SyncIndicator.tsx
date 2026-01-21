@@ -1,6 +1,7 @@
 import { RefreshCw, Check, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSyncStore } from '@/stores/syncStore';
+import { useDojoData } from '@/contexts/DojoDataContext';
 import {
   Tooltip,
   TooltipContent,
@@ -9,6 +10,7 @@ import {
 
 export function SyncIndicator() {
   const { syncMetadata, isSyncing } = useSyncStore();
+  const { totalEpisodes, isLoading } = useDojoData();
   
   const status = isSyncing ? 'syncing' : (syncMetadata?.sync_status || 'synced');
   
@@ -33,7 +35,7 @@ export function SyncIndicator() {
   const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.synced;
   const Icon = config.icon;
   
-  const episodeCount = syncMetadata?.total_episodes || 284;
+  const episodeCount = totalEpisodes;
   const lastSyncDate = syncMetadata?.last_sync_at 
     ? new Date(syncMetadata.last_sync_at).toLocaleDateString()
     : 'Never';
@@ -43,7 +45,7 @@ export function SyncIndicator() {
       <TooltipTrigger asChild>
         <button className="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-muted/50 transition-colors text-sm text-muted-foreground">
           <Icon className={cn('h-3.5 w-3.5', config.className)} />
-          <span className="hidden sm:inline">{episodeCount} episodes</span>
+          <span className="hidden sm:inline">{isLoading ? '…' : episodeCount} episodes</span>
         </button>
       </TooltipTrigger>
       <TooltipContent side="bottom" className="text-xs">
