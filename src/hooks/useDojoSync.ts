@@ -8,11 +8,11 @@ import {
   getStoredEpisodes,
   storeEpisodes,
   Episode,
-  SyncStatus,
   storeCompanies,
   storeFrameworks,
   getStoredCompanies,
-  getStoredFrameworks
+  getStoredFrameworks,
+  clearTranscriptCache
 } from '@/services/github';
 import { extractAllIntelligence, loadCachedCompaniesAndFrameworks, CompanyIntelligence, Framework } from '@/services/intelligence';
 
@@ -45,6 +45,9 @@ export function useDojoSync() {
 
   // Load cached data on mount - try Supabase first, then localStorage
   useEffect(() => {
+    // Clear old transcript cache to free localStorage quota
+    clearTranscriptCache();
+    
     const loadInitialData = async () => {
       // First check localStorage for quick load
       const localCompanies = getStoredCompanies<CompanyIntelligence>();
