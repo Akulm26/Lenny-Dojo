@@ -204,6 +204,14 @@ export default function Settings() {
                 <span>{syncMetadata?.latest_episode_date || 'N/A'}</span>
               </div>
               
+              {cacheCount > 0 && syncMetadata?.total_episodes && cacheCount !== syncMetadata.total_episodes && (
+                <p className="text-xs text-muted-foreground bg-muted/50 p-2 rounded">
+                  <strong>Note:</strong> "Episodes cached" ({cacheCount}) reflects all episodes stored in the database, 
+                  while "Episodes loaded" ({syncMetadata.total_episodes}) is the count from the latest GitHub sync. 
+                  The cache may include older episodes no longer in the source repository.
+                </p>
+              )}
+              
               {/* Show sync status message */}
               {(status === 'syncing' || status === 'processing' || status === 'checking') && (
                 <div className="p-3 rounded-lg bg-primary/10 text-sm">
