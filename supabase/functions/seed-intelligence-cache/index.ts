@@ -1,4 +1,5 @@
-// Seed Intelligence Cache Edge Function - v2 (no auth required)
+// Seed Intelligence Cache Edge Function - v3 (real transcript extraction)
+// This now fetches actual transcripts from GitHub and uses AI extraction
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -10,18 +11,17 @@ const corsHeaders = {
 };
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
-const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY');
 
-// No authentication required for seeding demo data
-// The function uses service role internally to write to the database
-function authenticateRequest(_req: Request): { authenticated: boolean; useServiceRole: boolean } {
-  // Always allow - this is a demo seeding function
-  return { authenticated: true, useServiceRole: true };
-}
+// GitHub repo configuration
+const REPO_OWNER = 'ChatPRD';
+const REPO_NAME = 'lennys-podcast-transcripts';
+const BRANCH = 'main';
 
 // Validation constants
 const MAX_EPISODES = 500;
 const MAX_STRING_LENGTH = 500;
+const BATCH_SIZE = 5; // Process 5 at a time to avoid rate limits
+const DELAY_BETWEEN_BATCHES = 3000; // 3 second delay between batches
 
 interface EpisodeInput {
   id: string;
@@ -37,7 +37,6 @@ function validateString(value: unknown, fieldName: string, maxLength: number): s
   if (value.length > maxLength) {
     return value.substring(0, maxLength);
   }
-  // Basic sanitization - remove control characters
   return value.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
 }
 
@@ -80,187 +79,87 @@ function validateRequest(body: unknown): EpisodeInput[] {
   return episodes.map((ep, i) => validateEpisode(ep, i));
 }
 
-// Generate realistic demo intelligence for an episode based on its metadata
-function generateDemoIntelligence(episodeId: string, guestName: string, episodeTitle: string) {
-  // Parse guest name to create more realistic data
-  const nameParts = guestName.split(' ');
-  const firstName = nameParts[0] || 'Guest';
-  
-  // Generate different companies based on episode characteristics
-  const commonCompanies = [
-    { name: 'Airbnb', context: 'growth and marketplace dynamics' },
-    { name: 'Stripe', context: 'developer experience and product-led growth' },
-    { name: 'Slack', context: 'enterprise adoption and viral growth' },
-    { name: 'Notion', context: 'product design and user engagement' },
-    { name: 'Figma', context: 'collaborative design and community' },
-    { name: 'Linear', context: 'product velocity and engineering culture' },
-    { name: 'Superhuman', context: 'premium products and speed' },
-    { name: 'Amplitude', context: 'product analytics and data-driven decisions' },
-    { name: 'Loom', context: 'async communication and adoption' },
-    { name: 'Calendly', context: 'product-led growth and simplicity' },
-  ];
-  
-  // Select 2-4 random companies for this episode
-  const shuffled = [...commonCompanies].sort(() => Math.random() - 0.5);
-  const selectedCompanies = shuffled.slice(0, 2 + Math.floor(Math.random() * 3));
-  
-  // Add a "guest company" based on the episode
-  const guestCompanyName = episodeTitle.includes('at ') 
-    ? episodeTitle.split('at ')[1]?.split(/[,|\-]/)[0]?.trim() || `${firstName}'s Company`
-    : `${firstName}'s Company`;
-
-  const frameworks = [
-    {
-      name: 'Jobs to Be Done',
-      creator: 'Clayton Christensen',
-      category: 'Customer Research',
-      explanation: 'Focus on the underlying job customers are trying to accomplish, not the product features.',
-      when_to_use: 'When doing customer research or defining product strategy',
-      example: `${guestName} used JTBD to understand why users really adopted their product.`,
-      quote: 'Customers hire products to do jobs for them.',
-    },
-    {
-      name: 'The RICE Framework',
-      creator: 'Intercom',
-      category: 'Prioritization',
-      explanation: 'Score features by Reach, Impact, Confidence, and Effort to prioritize effectively.',
-      when_to_use: 'When prioritizing a backlog of features or initiatives',
-      example: 'The team used RICE to cut through opinion-based debates about what to build next.',
-      quote: 'Data-driven prioritization beats HiPPO (Highest Paid Person\'s Opinion).',
-    },
-    {
-      name: 'North Star Metric',
-      creator: 'Sean Ellis',
-      category: 'Metrics',
-      explanation: 'A single metric that best captures the core value your product delivers to customers.',
-      when_to_use: 'When aligning teams around what matters most for growth',
-      example: 'Focusing on weekly active users helped the team make better product decisions.',
-      quote: 'The North Star Metric aligns the entire company around delivering customer value.',
-    },
-    {
-      name: 'Opportunity Solution Tree',
-      creator: 'Teresa Torres',
-      category: 'Discovery',
-      explanation: 'Visual framework connecting outcomes to opportunities to solutions through continuous discovery.',
-      when_to_use: 'During product discovery to explore the problem space',
-      example: `${guestName} shared how they map customer opportunities before jumping to solutions.`,
-      quote: 'Good product teams fall in love with the problem, not the solution.',
-    },
-  ];
-  
-  // Select 1-2 frameworks
-  const selectedFrameworks = [...frameworks]
-    .sort(() => Math.random() - 0.5)
-    .slice(0, 1 + Math.floor(Math.random() * 2));
-
-  const companies = [
-    // Guest's company (if identifiable)
-    {
-      name: guestCompanyName,
-      is_guest_company: true,
-      mention_context: `${guestName}'s experience building and scaling the product`,
-      decisions: [
-        {
-          what: 'Focused on a single use case before expanding',
-          when: 'Early stage',
-          why: 'Needed to nail the core value prop before adding complexity',
-          outcome: 'Achieved strong product-market fit with initial users',
-          quote: `We had to resist the urge to build everything at once.`,
-        },
-        {
-          what: 'Invested heavily in user research',
-          when: 'Growth phase',
-          why: 'Wanted to understand the why behind user behavior',
-          outcome: 'Uncovered unexpected use cases that drove expansion',
-          quote: `The best insights came from watching users, not asking them.`,
-        },
-      ],
-      opinions: [
-        {
-          opinion: 'Speed of iteration matters more than perfection',
-          quote: `Ship fast, learn fast. Perfect is the enemy of shipped.`,
-        },
-      ],
-      metrics_mentioned: ['Weekly Active Users', 'Retention Rate', 'NPS'],
-    },
-    // Add referenced companies
-    ...selectedCompanies.map((c, i) => ({
-      name: c.name,
-      is_guest_company: false,
-      mention_context: `Referenced as an example of ${c.context}`,
-      decisions: i === 0 ? [
-        {
-          what: `Built for a specific user persona first`,
-          when: 'Early days',
-          why: 'Needed to prove value before expanding',
-          outcome: 'Created a strong foundation for growth',
-          quote: `${c.name} understood their core user deeply.`,
-        },
-      ] : [],
-      opinions: i < 2 ? [
-        {
-          opinion: `${c.name}'s approach to ${c.context} is worth studying`,
-          quote: `They really got ${c.context} right.`,
-        },
-      ] : [],
-      metrics_mentioned: i === 0 ? ['Growth Rate', 'User Engagement'] : [],
-    })),
-  ];
-
-  const question_seeds = [
-    {
-      type: 'product_strategy',
-      company: guestCompanyName,
-      situation: `A PM at a B2B SaaS company similar to ${guestCompanyName} is facing a strategic decision.`,
-      what_happened: 'The team needs to decide whether to go deeper on existing use cases or expand to adjacent ones.',
-      usable_quotes: [
-        `${guestName}: "The hardest part is saying no to good ideas."`,
-        `${guestName}: "Focus is a superpower in product development."`,
-      ],
-    },
-    {
-      type: 'prioritization',
-      company: guestCompanyName,
-      situation: 'Engineering resources are limited and stakeholders have competing priorities.',
-      what_happened: `${guestName} shared how they handled this exact situation.`,
-      usable_quotes: [
-        `"Use data to have better arguments, not to avoid arguments."`,
-        `"Every yes is a no to something else."`,
-      ],
-    },
-  ];
-
-  const memorable_quotes = [
-    {
-      quote: `The best product managers are obsessed with understanding the customer's world.`,
-      topic: 'Customer Empathy',
-      context: `${guestName} on what separates good PMs from great ones.`,
-    },
-    {
-      quote: `Shipping is a habit. If you're not shipping, you're not learning.`,
-      topic: 'Velocity',
-      context: 'On the importance of maintaining momentum.',
-    },
-    {
-      quote: `Your roadmap is a hypothesis, not a promise.`,
-      topic: 'Planning',
-      context: 'On treating product plans with appropriate uncertainty.',
-    },
-  ];
-
-  return {
-    companies,
-    frameworks: selectedFrameworks,
-    question_seeds,
-    memorable_quotes,
-    _source: {
-      episode_id: episodeId,
-      guest_name: guestName,
-      episode_title: episodeTitle,
-      extracted_at: new Date().toISOString(),
-    },
-  };
+// Fetch transcript from GitHub
+async function fetchTranscript(episodeId: string): Promise<{ guest: string; title: string; transcript: string } | null> {
+  try {
+    const url = `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${BRANCH}/episodes/${episodeId}/transcript.md`;
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      console.warn(`Failed to fetch transcript for ${episodeId}: ${response.status}`);
+      return null;
+    }
+    
+    const content = await response.text();
+    
+    // Parse YAML frontmatter
+    const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+    
+    let guest = episodeId.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    let title = `Episode with ${guest}`;
+    let transcript = content;
+    
+    if (frontmatterMatch) {
+      const yamlContent = frontmatterMatch[1];
+      transcript = frontmatterMatch[2].trim();
+      
+      yamlContent.split('\n').forEach(line => {
+        const colonIndex = line.indexOf(':');
+        if (colonIndex > 0) {
+          const key = line.substring(0, colonIndex).trim();
+          let value = line.substring(colonIndex + 1).trim();
+          
+          if ((value.startsWith('"') && value.endsWith('"')) || 
+              (value.startsWith("'") && value.endsWith("'"))) {
+            value = value.slice(1, -1);
+          }
+          
+          if (key === 'guest') guest = value;
+          if (key === 'title') title = value;
+        }
+      });
+    }
+    
+    return { guest, title, transcript };
+  } catch (error) {
+    console.error(`Error fetching transcript for ${episodeId}:`, error);
+    return null;
+  }
 }
+
+// Call the extract-intelligence edge function
+async function extractIntelligence(
+  transcript: string,
+  episodeId: string,
+  guestName: string,
+  episodeTitle: string,
+  supabaseUrl: string,
+  serviceRoleKey: string
+): Promise<any> {
+  const response = await fetch(`${supabaseUrl}/functions/v1/extract-intelligence`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${serviceRoleKey}`,
+    },
+    body: JSON.stringify({
+      transcript,
+      episodeId,
+      guestName,
+      episodeTitle,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Extract intelligence failed (${response.status}): ${errorText}`);
+  }
+
+  return response.json();
+}
+
+// Sleep helper
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 serve(async (req) => {
   // Handle CORS preflight
@@ -269,9 +168,6 @@ serve(async (req) => {
   }
 
   try {
-    // No authentication required - always allow
-    const auth = authenticateRequest(req);
-
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
@@ -307,7 +203,7 @@ serve(async (req) => {
     const cachedIds = new Set((existingCache || []).map(e => e.episode_id));
     const uncachedEpisodes = episodes.filter(e => !cachedIds.has(e.id));
 
-    console.log(`Found ${cachedIds.size} cached, ${uncachedEpisodes.length} to seed`);
+    console.log(`Found ${cachedIds.size} cached, ${uncachedEpisodes.length} to process`);
 
     if (uncachedEpisodes.length === 0) {
       return new Response(
@@ -320,40 +216,76 @@ serve(async (req) => {
       );
     }
 
-    // Generate and insert demo intelligence in batches
-    const BATCH_SIZE = 50;
+    // Process episodes in small batches with real AI extraction
     let totalSeeded = 0;
+    const errors: string[] = [];
 
     for (let i = 0; i < uncachedEpisodes.length; i += BATCH_SIZE) {
       const batch = uncachedEpisodes.slice(i, i + BATCH_SIZE);
+      console.log(`Processing batch ${Math.floor(i / BATCH_SIZE) + 1}: ${batch.length} episodes`);
       
-      const records = batch.map(episode => ({
-        episode_id: episode.id,
-        guest_name: episode.guest,
-        episode_title: episode.title,
-        intelligence: generateDemoIntelligence(episode.id, episode.guest, episode.title),
-        extracted_at: new Date().toISOString(),
-      }));
-
-      const { error } = await supabase
-        .from('episode_intelligence_cache')
-        .upsert(records, { onConflict: 'episode_id' });
-
-      if (error) {
-        console.error(`Batch ${i / BATCH_SIZE + 1} error:`, error);
-        throw error;
+      for (const episode of batch) {
+        try {
+          // Fetch real transcript from GitHub
+          const transcriptData = await fetchTranscript(episode.id);
+          
+          if (!transcriptData) {
+            errors.push(`${episode.id}: Failed to fetch transcript`);
+            continue;
+          }
+          
+          // Extract intelligence using AI
+          const intelligence = await extractIntelligence(
+            transcriptData.transcript,
+            episode.id,
+            transcriptData.guest,
+            transcriptData.title,
+            supabaseUrl,
+            supabaseKey
+          );
+          
+          // Store in cache
+          const { error: insertError } = await supabase
+            .from('episode_intelligence_cache')
+            .upsert({
+              episode_id: episode.id,
+              guest_name: transcriptData.guest,
+              episode_title: transcriptData.title,
+              intelligence,
+              extracted_at: new Date().toISOString(),
+            }, { onConflict: 'episode_id' });
+          
+          if (insertError) {
+            errors.push(`${episode.id}: ${insertError.message}`);
+          } else {
+            totalSeeded++;
+            console.log(`✓ Extracted: ${episode.id}`);
+          }
+          
+          // Small delay between individual episodes
+          await sleep(500);
+          
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : 'Unknown error';
+          errors.push(`${episode.id}: ${msg}`);
+          console.error(`✗ Failed: ${episode.id} - ${msg}`);
+        }
       }
-
-      totalSeeded += batch.length;
-      console.log(`Seeded batch ${Math.floor(i / BATCH_SIZE) + 1}: ${batch.length} episodes`);
+      
+      // Longer delay between batches to avoid rate limits
+      if (i + BATCH_SIZE < uncachedEpisodes.length) {
+        console.log(`Waiting ${DELAY_BETWEEN_BATCHES}ms before next batch...`);
+        await sleep(DELAY_BETWEEN_BATCHES);
+      }
     }
 
     return new Response(
       JSON.stringify({ 
-        message: `Successfully seeded ${totalSeeded} episodes`,
+        message: `Successfully extracted ${totalSeeded} episodes with real data`,
         cached: cachedIds.size,
         seeded: totalSeeded,
-        total: episodes.length
+        total: episodes.length,
+        errors: errors.length > 0 ? errors.slice(0, 10) : undefined // Only first 10 errors
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
