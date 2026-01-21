@@ -21,6 +21,7 @@ import Progress from "./pages/Progress";
 import Settings from "./pages/Settings";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
+import BusinessDocument from "./pages/BusinessDocument";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -92,6 +93,7 @@ const App = () => {
                   } />
                   <Route path="/progress" element={<Progress />} />
                   <Route path="/settings" element={<Settings />} />
+                  <Route path="/business-document" element={<BusinessDocument />} />
                   {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                   <Route path="*" element={<NotFound />} />
                 </Routes>
