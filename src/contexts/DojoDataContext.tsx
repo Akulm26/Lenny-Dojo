@@ -19,7 +19,13 @@ interface DojoDataContextValue {
   sync: () => void;
 }
 
-const DojoDataContext = createContext<DojoDataContextValue | null>(null);
+// Persist the context instance across Vite HMR to avoid
+// "Provider exists but consumer sees null" issues.
+const globalKey = '__lennys_dojo_data_context__';
+const DojoDataContext: React.Context<DojoDataContextValue | null> =
+  (globalThis as any)[globalKey] ?? createContext<DojoDataContextValue | null>(null);
+
+(globalThis as any)[globalKey] = DojoDataContext;
 
 export function DojoDataProvider({ children }: { children: ReactNode }) {
   const dojoSync = useDojoSync();
@@ -30,7 +36,7 @@ export function DojoDataProvider({ children }: { children: ReactNode }) {
       // Load from cache first, then check for updates
       dojoSync.checkAndSync();
     }
-  }, []);
+  }, [dojoSync]);
 
   return (
     <DojoDataContext.Provider value={dojoSync}>
