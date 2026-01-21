@@ -35,7 +35,8 @@ function authenticateRequest(req: Request): { authenticated: boolean; error?: st
   return { authenticated: false, error: 'Invalid credentials' };
 }
 
-const GITHUB_API_BASE = 'https://api.github.com/repos/nicoles/lennys-podcast-transcripts';
+const GITHUB_API_BASE = 'https://api.github.com/repos/ChatPRD/lennys-podcast-transcripts';
+const GITHUB_RAW_BASE = 'https://raw.githubusercontent.com/ChatPRD/lennys-podcast-transcripts/main';
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
 
 async function fetchEpisodeList(): Promise<string[]> {
@@ -56,7 +57,7 @@ async function fetchEpisodeList(): Promise<string[]> {
 async function fetchEpisodeContent(episodeId: string): Promise<{ guest: string; title: string; transcript: string } | null> {
   try {
     const response = await fetch(
-      `https://raw.githubusercontent.com/nicoles/lennys-podcast-transcripts/main/transcripts/${episodeId}/transcript.md`
+      `${GITHUB_RAW_BASE}/transcripts/${episodeId}/transcript.md`
     );
     
     if (!response.ok) return null;
