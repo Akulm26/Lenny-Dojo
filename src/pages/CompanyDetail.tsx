@@ -136,13 +136,16 @@ export default function CompanyDetail() {
           </div>
         </div>
         
-        {/* Episodes */}
+        {/* Episodes where this company was discussed */}
         {company.episodes && company.episodes.length > 0 && (
           <section className="mb-8">
             <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
               <Users className="h-5 w-5 text-primary" />
-              Featured In
+              Podcast Episodes
             </h2>
+            <p className="text-sm text-muted-foreground mb-4">
+              Episodes of Lenny's Podcast where {company.name} was discussed:
+            </p>
             <div className="space-y-3">
               {company.episodes.map((ep, i) => (
                 <div 
@@ -153,7 +156,7 @@ export default function CompanyDetail() {
                     <div>
                       <h3 className="font-medium">{ep.episode_title}</h3>
                       <p className="text-sm text-muted-foreground">
-                        with {ep.guest_name}
+                        Guest: {ep.guest_name}
                         {ep.is_guest_company && (
                           <span className="ml-2 px-2 py-0.5 rounded text-xs bg-primary/10 text-primary">
                             Guest's Company
