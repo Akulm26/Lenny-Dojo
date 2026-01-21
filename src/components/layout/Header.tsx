@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { SyncIndicator } from './SyncIndicator';
+import { SpotlightSearch } from '@/components/SpotlightSearch';
 
 const navItems = [
   { href: '/practice', label: 'Practice', icon: Dumbbell },
@@ -59,6 +60,8 @@ export function Header() {
         
         {/* Right side */}
         <div className="flex items-center gap-3">
+          <SpotlightSearch />
+          
           <SyncIndicator />
           
           <Link to="/settings" className="hidden md:flex">
