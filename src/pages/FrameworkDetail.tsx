@@ -166,24 +166,24 @@ export default function FrameworkDetail() {
           Back to Frameworks
         </Link>
         
-        {/* Category Badge */}
-        {framework.category && (
-          <span className={cn(
-            'inline-flex items-center px-3 py-1 rounded-full text-sm font-medium mb-4',
-            CATEGORY_COLORS[framework.category] || 'bg-muted text-muted-foreground'
-          )}>
-            {CATEGORY_LABELS[framework.category] || framework.category}
-          </span>
-        )}
-        
-        {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-3xl md:text-4xl font-bold mb-2">{framework.name}</h1>
-          {framework.creator && (
-            <p className="text-muted-foreground flex items-center gap-2">
-              <User className="h-4 w-4" />
-              Created by {framework.creator}
-            </p>
+        {/* Header with Category Badge */}
+        <div className="flex items-start justify-between gap-4 mb-6">
+          <div>
+            <h1 className="text-3xl md:text-4xl font-bold mb-2">{framework.name}</h1>
+            {framework.creator && (
+              <p className="text-muted-foreground flex items-center gap-2">
+                <User className="h-4 w-4" />
+                Created by {framework.creator}
+              </p>
+            )}
+          </div>
+          {framework.category && (
+            <span className={cn(
+              'inline-flex items-center px-3 py-1 rounded-full text-sm font-medium shrink-0',
+              CATEGORY_COLORS[framework.category] || 'bg-muted text-muted-foreground'
+            )}>
+              {CATEGORY_LABELS[framework.category] || framework.category}
+            </span>
           )}
         </div>
         
