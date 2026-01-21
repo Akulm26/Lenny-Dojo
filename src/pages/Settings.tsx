@@ -11,6 +11,7 @@ import {
   Check,
   Database,
   Loader2,
+  CloudDownload,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import {
@@ -28,6 +29,7 @@ import { seedIntelligenceCache, getCacheStatus } from '@/services/seedCache';
 import { Progress } from '@/components/ui/progress';
 import { useDojoData } from '@/contexts/DojoDataContext';
 import { clearAllCache } from '@/services/github';
+import { supabase } from '@/integrations/supabase/client';
 
 export default function Settings() {
   const { syncMetadata, isSyncing, setIsSyncing } = useSyncStore();
@@ -40,6 +42,10 @@ export default function Settings() {
   const [isSeeding, setIsSeeding] = useState(false);
   const [seedProgress, setSeedProgress] = useState({ current: 0, total: 0, message: '' });
   const [seedResult, setSeedResult] = useState<string | null>(null);
+  
+  // Manual sync state
+  const [isSyncingEpisodes, setIsSyncingEpisodes] = useState(false);
+  const [syncEpisodeResult, setSyncEpisodeResult] = useState<string | null>(null);
   
   
   // Load cache status on mount
@@ -78,6 +84,39 @@ export default function Settings() {
   const handleCheckUpdates = async () => {
     // Just trigger sync directly
     sync();
+  };
+  
+  const handleSyncNewEpisodes = async () => {
+    setIsSyncingEpisodes(true);
+    setSyncEpisodeResult(null);
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('sync-new-episodes', {
+        headers: {
+          'x-cron-secret': 'lenny-sync-2024-secret'
+        }
+      });
+      
+      if (error) {
+        throw error;
+      }
+      
+      if (data.error) {
+        throw new Error(data.error);
+      }
+      
+      // Update cache count
+      const status = await getCacheStatus();
+      setCacheCount(status.cached);
+      
+      setSyncEpisodeResult(data.message || `Processed ${data.processed || 0} new episodes`);
+    } catch (error) {
+      console.error('Sync new episodes error:', error);
+      setSyncEpisodeResult('Error: ' + (error instanceof Error ? error.message : 'Unknown'));
+    } finally {
+      setIsSyncingEpisodes(false);
+      setTimeout(() => setSyncEpisodeResult(null), 8000);
+    }
   };
   
   const handleExportProgress = () => {
@@ -153,6 +192,49 @@ export default function Settings() {
                   )}
                 </Button>
               </div>
+            </div>
+          </section>
+          
+          {/* Sync New Episodes from GitHub */}
+          <section className="p-6 rounded-xl border border-border bg-card">
+            <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <CloudDownload className="h-5 w-5 text-primary" />
+              Sync New Episodes
+            </h2>
+            
+            <p className="text-sm text-muted-foreground mb-4">
+              Check the GitHub repository for new podcast transcripts and process them with AI. 
+              This runs automatically daily at 2 AM UTC, but you can trigger it manually here.
+            </p>
+            
+            <div className="space-y-4">
+              {syncEpisodeResult && (
+                <div className={`p-3 rounded-lg text-sm ${
+                  syncEpisodeResult.startsWith('Error') 
+                    ? 'bg-destructive/10 text-destructive' 
+                    : 'bg-primary/10 text-primary'
+                }`}>
+                  {syncEpisodeResult}
+                </div>
+              )}
+              
+              <Button
+                onClick={handleSyncNewEpisodes}
+                disabled={isSyncingEpisodes}
+                className="gap-2"
+              >
+                {isSyncingEpisodes ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Checking GitHub...
+                  </>
+                ) : (
+                  <>
+                    <CloudDownload className="h-4 w-4" />
+                    Sync New Episodes
+                  </>
+                )}
+              </Button>
             </div>
           </section>
           
