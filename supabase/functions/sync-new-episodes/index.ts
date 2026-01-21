@@ -52,21 +52,81 @@ function getGitHubHeaders(): Record<string, string> {
   return headers;
 }
 
-async function fetchEpisodeList(): Promise<string[]> {
-  const response = await fetch(`${GITHUB_API_BASE}/contents/episodes`, {
+async function fetchEpisodeListWithRetry(maxRetries = 3): Promise<string[]> {
+  let lastError: Error | null = null;
+  
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const response = await fetch(`${GITHUB_API_BASE}/contents/episodes`, {
+        headers: getGitHubHeaders(),
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        return data
+          .filter((item: any) => item.type === 'dir')
+          .map((item: any) => item.name);
+      }
+      
+      // Handle rate limiting specifically
+      if (response.status === 403 || response.status === 429) {
+        const retryAfter = response.headers.get('retry-after');
+        const waitTime = retryAfter ? parseInt(retryAfter) * 1000 : Math.pow(2, attempt + 1) * 1000;
+        console.log(`GitHub rate limited. Waiting ${waitTime}ms before retry ${attempt + 1}/${maxRetries}`);
+        await new Promise(r => setTimeout(r, waitTime));
+        continue;
+      }
+      
+      const errorText = await response.text();
+      console.error('GitHub API response:', response.status, errorText);
+      throw new Error(`GitHub API error: ${response.status}`);
+      
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      if (attempt < maxRetries - 1) {
+        const waitTime = Math.pow(2, attempt + 1) * 1000;
+        console.log(`Retrying in ${waitTime}ms...`);
+        await new Promise(r => setTimeout(r, waitTime));
+      }
+    }
+  }
+  
+  throw lastError || new Error('Failed to fetch episode list after retries');
+}
+
+// Fallback: use git trees API which may have different rate limits
+async function fetchEpisodeListFallback(): Promise<string[]> {
+  console.log('Trying git trees API as fallback...');
+  const response = await fetch(`${GITHUB_API_BASE}/git/trees/main?recursive=1`, {
     headers: getGitHubHeaders(),
   });
   
   if (!response.ok) {
-    const errorText = await response.text();
-    console.error('GitHub API response:', response.status, errorText);
-    throw new Error(`GitHub API error: ${response.status}`);
+    throw new Error(`Git trees API error: ${response.status}`);
   }
   
   const data = await response.json();
-  return data
-    .filter((item: any) => item.type === 'dir')
-    .map((item: any) => item.name);
+  const episodeDirs = new Set<string>();
+  
+  for (const item of data.tree || []) {
+    if (item.path?.startsWith('episodes/') && item.type === 'tree') {
+      const match = item.path.match(/^episodes\/([^/]+)$/);
+      if (match) {
+        episodeDirs.add(match[1]);
+      }
+    }
+  }
+  
+  return Array.from(episodeDirs);
+}
+
+async function fetchEpisodeList(): Promise<string[]> {
+  try {
+    return await fetchEpisodeListWithRetry(3);
+  } catch (err) {
+    console.log('Primary fetch failed, trying fallback:', err);
+    return await fetchEpisodeListFallback();
+  }
 }
 
 async function fetchEpisodeContent(episodeId: string): Promise<{ guest: string; title: string; transcript: string } | null> {
