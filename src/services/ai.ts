@@ -145,10 +145,40 @@ export async function extractIntelligence(params: {
   guestName: string;
   episodeTitle: string;
 }): Promise<ExtractedIntelligence> {
-  // IMPORTANT: AI extraction is disabled for this app build.
-  // Intelligence must come from the episode_intelligence_cache (seeded in Settings).
-  // We throw here so that even if some old code path calls this function, it will
-  // NOT invoke the backend function (and therefore won't hit 402).
-  void params;
-  throw new Error('AI extraction is disabled. Seed the Intelligence Cache in Settings.');
+  const { data, error } = await supabase.functions.invoke('extract-intelligence', {
+    body: params
+  });
+
+  if (error) {
+    console.error('Extract intelligence error:', error);
+    
+    // Try to get the response body for more specific error info
+    const ctx = (error as any).context;
+    if (ctx && typeof ctx.json === 'function') {
+      try {
+        const body = await ctx.json();
+        if (body?.error?.includes('Payment required') || body?.error?.includes('402')) {
+          throw new Error('Payment required (402). Please add Lovable AI credits in Settings → Workspace → Usage.');
+        }
+        if (body?.error?.includes('rate') || body?.error?.includes('429')) {
+          throw new Error('Rate limited (429). Please wait a few minutes and try again.');
+        }
+      } catch (parseError) {
+        // If JSON parsing fails, continue with generic error
+      }
+    }
+    
+    // Check if error message already contains status hints
+    const msg = error.message || '';
+    if (msg.includes('402') || msg.toLowerCase().includes('payment')) {
+      throw new Error('Payment required (402). Please add Lovable AI credits in Settings → Workspace → Usage.');
+    }
+    if (msg.includes('429') || msg.toLowerCase().includes('rate')) {
+      throw new Error('Rate limited (429). Please wait a few minutes and try again.');
+    }
+    
+    throw new Error(error.message || 'Failed to extract intelligence');
+  }
+
+  return data;
 }
