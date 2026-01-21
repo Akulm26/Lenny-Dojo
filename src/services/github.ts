@@ -119,10 +119,8 @@ export async function fetchEpisodeList(): Promise<string[]> {
 }
 
 export async function fetchTranscriptRaw(episodeId: string): Promise<string> {
-  const cacheKey = `dojo_transcript_${episodeId}`;
-  const cached = getCached<string>(cacheKey);
-  if (cached) return cached;
-
+  // Don't cache transcripts in localStorage - they're too large and cause QuotaExceededError
+  // Transcripts are fetched fresh each time but intelligence is cached in Supabase
   const url = `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${BRANCH}/episodes/${episodeId}/transcript.md`;
 
   const response = await fetch(url);
@@ -131,9 +129,7 @@ export async function fetchTranscriptRaw(episodeId: string): Promise<string> {
     throw new Error(`Failed to fetch transcript for ${episodeId}: ${response.status}`);
   }
 
-  const content = await response.text();
-  setCache(cacheKey, content, CACHE_TTL.TRANSCRIPT);
-  return content;
+  return response.text();
 }
 
 export function parseTranscript(content: string, episodeId: string): Episode {
@@ -244,7 +240,10 @@ export function getStoredEpisodes(): Episode[] {
 }
 
 export function storeEpisodes(episodes: Episode[]): void {
-  setCache(CACHE_KEYS.EPISODES_DATA, episodes);
+  // Don't store full episodes with transcripts - too large for localStorage
+  // Only store metadata without transcripts
+  const metadata = episodes.map(({ transcript, ...rest }) => rest);
+  setCache(CACHE_KEYS.EPISODES_DATA, metadata);
 }
 
 export function getStoredCompanies<T>(): T[] {
@@ -267,10 +266,26 @@ export function clearAllCache(): void {
   Object.values(CACHE_KEYS).forEach(key => {
     localStorage.removeItem(key);
   });
-  // Also clear individual transcript caches
+  // Also clear individual transcript caches (legacy)
   Object.keys(localStorage).forEach(key => {
     if (key.startsWith('dojo_transcript_')) {
       localStorage.removeItem(key);
     }
   });
+}
+
+/**
+ * Clear localStorage to free up quota - call this on app init
+ */
+export function clearTranscriptCache(): void {
+  let cleared = 0;
+  Object.keys(localStorage).forEach(key => {
+    if (key.startsWith('dojo_transcript_')) {
+      localStorage.removeItem(key);
+      cleared++;
+    }
+  });
+  if (cleared > 0) {
+    console.log(`Cleared ${cleared} cached transcripts to free localStorage quota`);
+  }
 }
