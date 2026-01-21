@@ -38,12 +38,28 @@ function authenticateRequest(req: Request): { authenticated: boolean; error?: st
 const GITHUB_API_BASE = 'https://api.github.com/repos/ChatPRD/lennys-podcast-transcripts';
 const GITHUB_RAW_BASE = 'https://raw.githubusercontent.com/ChatPRD/lennys-podcast-transcripts/main';
 
+function getGitHubHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Accept': 'application/vnd.github.v3+json',
+    'User-Agent': 'LennysDojo-Sync',
+  };
+  
+  const githubToken = Deno.env.get('GITHUB_TOKEN');
+  if (githubToken) {
+    headers['Authorization'] = `Bearer ${githubToken}`;
+  }
+  
+  return headers;
+}
+
 async function fetchEpisodeList(): Promise<string[]> {
   const response = await fetch(`${GITHUB_API_BASE}/contents/episodes`, {
-    headers: { 'Accept': 'application/vnd.github.v3+json' },
+    headers: getGitHubHeaders(),
   });
   
   if (!response.ok) {
+    const errorText = await response.text();
+    console.error('GitHub API response:', response.status, errorText);
     throw new Error(`GitHub API error: ${response.status}`);
   }
   
