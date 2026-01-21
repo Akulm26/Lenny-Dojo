@@ -163,12 +163,27 @@ export function useDojoSync() {
   }, []);
 
   const checkAndSyncIfNeeded = useCallback(async () => {
+    // If we already have cached data, just mark as complete
+    const cachedCompanies = getStoredCompanies<CompanyIntelligence>();
+    const cachedFrameworks = getStoredFrameworks<Framework>();
+    
+    if (cachedCompanies.length > 0 && cachedFrameworks.length > 0) {
+      setState(prev => ({ 
+        ...prev, 
+        status: 'complete', 
+        progressMessage: 'Loaded from cache',
+        companies: cachedCompanies,
+        frameworks: cachedFrameworks
+      }));
+      return;
+    }
+    
     try {
       setState(prev => ({ ...prev, status: 'checking', progressMessage: 'Checking for new episodes...' }));
       const { hasUpdates } = await checkForUpdates();
 
-      if (hasUpdates) {
-        setState(prev => ({ ...prev, progressMessage: 'New episodes found! Syncing...' }));
+      if (hasUpdates || cachedCompanies.length === 0) {
+        setState(prev => ({ ...prev, progressMessage: 'Syncing episodes...' }));
         await performFullSync();
       } else {
         setState(prev => ({ ...prev, status: 'complete', progressMessage: 'Already up to date' }));

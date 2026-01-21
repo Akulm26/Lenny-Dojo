@@ -3,64 +3,53 @@ import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { 
   Search,
   Building2,
   ArrowRight,
   MessageSquare,
   Lightbulb,
-  Target
+  Target,
+  RefreshCw
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { Company } from '@/types';
+import { useDojoData } from '@/contexts/DojoDataContext';
 
-// Demo companies data - in production this would come from the transcript processing
-const DEMO_COMPANIES: Partial<Company>[] = [
-  { id: 'airbnb', name: 'Airbnb', mention_count: 24, episodes: ['ep1', 'ep2'] },
-  { id: 'stripe', name: 'Stripe', mention_count: 18, episodes: ['ep3'] },
-  { id: 'slack', name: 'Slack', mention_count: 15, episodes: ['ep4', 'ep5'] },
-  { id: 'spotify', name: 'Spotify', mention_count: 14, episodes: ['ep6'] },
-  { id: 'notion', name: 'Notion', mention_count: 12, episodes: ['ep7', 'ep8'] },
-  { id: 'figma', name: 'Figma', mention_count: 11, episodes: ['ep9'] },
-  { id: 'duolingo', name: 'Duolingo', mention_count: 10, episodes: ['ep10'] },
-  { id: 'uber', name: 'Uber', mention_count: 9, episodes: ['ep11', 'ep12'] },
-  { id: 'netflix', name: 'Netflix', mention_count: 8, episodes: ['ep13'] },
-  { id: 'shopify', name: 'Shopify', mention_count: 7, episodes: ['ep14'] },
-  { id: 'dropbox', name: 'Dropbox', mention_count: 6, episodes: ['ep15'] },
-  { id: 'pinterest', name: 'Pinterest', mention_count: 5, episodes: ['ep16'] },
-];
-
-type SortOption = 'mentions' | 'alphabetical' | 'recent';
+type SortOption = 'mentions' | 'alphabetical' | 'decisions';
 
 export default function Companies() {
+  const { companies, isLoading, isReady, sync, status } = useDojoData();
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<SortOption>('mentions');
   
   const filteredCompanies = useMemo(() => {
-    let companies = [...DEMO_COMPANIES];
+    let list = [...companies];
     
     // Filter by search
     if (searchQuery) {
-      companies = companies.filter(c => 
-        c.name?.toLowerCase().includes(searchQuery.toLowerCase())
+      list = list.filter(c => 
+        c.name.toLowerCase().includes(searchQuery.toLowerCase())
       );
     }
     
     // Sort
     switch (sortBy) {
       case 'mentions':
-        companies.sort((a, b) => (b.mention_count || 0) - (a.mention_count || 0));
+        list.sort((a, b) => b.episode_count - a.episode_count);
         break;
       case 'alphabetical':
-        companies.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        list.sort((a, b) => a.name.localeCompare(b.name));
         break;
-      case 'recent':
-        // In production, sort by most recently discussed
+      case 'decisions':
+        list.sort((a, b) => b.total_decisions - a.total_decisions);
         break;
     }
     
-    return companies;
-  }, [searchQuery, sortBy]);
+    return list;
+  }, [companies, searchQuery, sortBy]);
+  
+  const showEmptyState = !isLoading && companies.length === 0;
   
   return (
     <Layout>
@@ -73,9 +62,19 @@ export default function Companies() {
               Company Success Autopsy
             </h1>
             <p className="text-muted-foreground">
-              Deep dive into {DEMO_COMPANIES.length}+ companies discussed on the podcast
+              {isReady 
+                ? `Deep dive into ${companies.length} companies discussed on the podcast`
+                : 'Loading company intelligence from podcasts...'
+              }
             </p>
           </div>
+          
+          {status !== 'syncing' && status !== 'processing' && (
+            <Button variant="outline" size="sm" onClick={sync} className="gap-2">
+              <RefreshCw className="h-4 w-4" />
+              Refresh Data
+            </Button>
+          )}
         </div>
         
         {/* Search and Filters */}
@@ -87,28 +86,59 @@ export default function Companies() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10"
+              disabled={!isReady}
             />
           </div>
           
           <div className="flex gap-2">
-            {(['mentions', 'alphabetical'] as SortOption[]).map((option) => (
+            {(['mentions', 'alphabetical', 'decisions'] as SortOption[]).map((option) => (
               <Button
                 key={option}
                 variant={sortBy === option ? 'default' : 'outline'}
                 size="sm"
                 onClick={() => setSortBy(option)}
+                disabled={!isReady}
                 className={cn(
                   sortBy === option && 'bg-primary hover:bg-primary-hover'
                 )}
               >
-                {option === 'mentions' ? 'Most Mentioned' : 'A-Z'}
+                {option === 'mentions' ? 'Most Episodes' : option === 'decisions' ? 'Most Decisions' : 'A-Z'}
               </Button>
             ))}
           </div>
         </div>
         
-        {/* Companies Grid */}
-        {filteredCompanies.length === 0 ? (
+        {/* Loading State */}
+        {isLoading && (
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="p-5 rounded-xl border border-border bg-card">
+                <Skeleton className="h-10 w-10 rounded-lg mb-4" />
+                <Skeleton className="h-6 w-3/4 mb-2" />
+                <Skeleton className="h-4 w-1/2 mb-4" />
+                <Skeleton className="h-8 w-full" />
+              </div>
+            ))}
+          </div>
+        )}
+        
+        {/* Empty State */}
+        {showEmptyState && (
+          <div className="text-center py-16">
+            <Building2 className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+            <h3 className="text-lg font-semibold mb-2">No Companies Yet</h3>
+            <p className="text-muted-foreground mb-4">
+              Sync the podcast transcripts to extract company intelligence.
+            </p>
+            <Button onClick={sync} className="gap-2">
+              <RefreshCw className="h-4 w-4" />
+              Start Sync
+            </Button>
+          </div>
+        )}
+        
+        {/* No Search Results */}
+        {isReady && searchQuery && filteredCompanies.length === 0 && (
           <div className="text-center py-16">
             <Building2 className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
             <h3 className="text-lg font-semibold mb-2">No results for "{searchQuery}"</h3>
@@ -119,12 +149,15 @@ export default function Companies() {
               Browse All
             </Button>
           </div>
-        ) : (
+        )}
+        
+        {/* Companies Grid */}
+        {isReady && filteredCompanies.length > 0 && (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredCompanies.map((company) => (
               <Link
-                key={company.id}
-                to={`/companies/${company.id}`}
+                key={company.name}
+                to={`/companies/${encodeURIComponent(company.name.toLowerCase().replace(/\s+/g, '-'))}`}
                 className="group"
               >
                 <div className="h-full p-5 rounded-xl border border-border bg-card card-hover">
@@ -133,7 +166,7 @@ export default function Companies() {
                       <Building2 className="h-5 w-5" />
                     </div>
                     <span className="text-sm text-muted-foreground">
-                      {company.mention_count} mentions
+                      {company.episode_count} episodes
                     </span>
                   </div>
                   
@@ -143,8 +176,12 @@ export default function Companies() {
                   
                   <div className="flex items-center gap-4 text-sm text-muted-foreground mb-4">
                     <span className="flex items-center gap-1">
+                      <Lightbulb className="h-3.5 w-3.5" />
+                      {company.total_decisions} decisions
+                    </span>
+                    <span className="flex items-center gap-1">
                       <MessageSquare className="h-3.5 w-3.5" />
-                      {company.episodes?.length || 0} episodes
+                      {company.total_opinions} opinions
                     </span>
                   </div>
                   
@@ -152,7 +189,7 @@ export default function Companies() {
                     <div className="flex gap-2">
                       <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs bg-muted">
                         <Lightbulb className="h-3 w-3" />
-                        Decisions
+                        Autopsy
                       </span>
                       <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs bg-muted">
                         <Target className="h-3 w-3" />
