@@ -32,10 +32,12 @@
 
 | Metric | Value |
 |--------|-------|
-| Podcast Episodes Processed | 200+ |
+| Podcast Episodes Processed | 303+ |
+| Companies Analyzed | 180+ |
+| Frameworks Extracted | 80+ |
 | Interview Types Covered | 9 |
 | Evaluation Dimensions | 5 |
-| AI Model | Google Gemini 2.5 Pro |
+| AI Model | Google Gemini 2.5 Pro / 3 Flash Preview |
 
 ### Key Value Propositions
 
@@ -412,17 +414,20 @@ Current PMs targeting senior roles at top companies.
 
 ## 9. Product Roadmap
 
-### Q1 2026 - Foundation ✅ (Current)
+### Q1 2026 - Foundation ✅ (Complete)
 
 | Feature | Status |
 |---------|--------|
 | Core practice flow with AI evaluation | ✅ Complete |
-| Company & framework intelligence | ✅ Complete |
+| Company & framework intelligence (303+ episodes) | ✅ Complete |
 | User authentication & profiles | ✅ Complete |
 | Basic progress tracking | ✅ Complete |
 | Splash screen & onboarding | ✅ Complete |
+| Automated daily sync pipeline | ✅ Complete |
+| Dual-layer caching (localStorage + database) | ✅ Complete |
+| Settings page with cache management | ✅ Complete |
 
-### Q2 2026 - Enhancement
+### Q2 2026 - Enhancement (Current)
 
 | Feature | Priority |
 |---------|----------|
@@ -541,6 +546,7 @@ Lenny's Dojo is an independent project dedicated to helping product managers suc
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | January 2026 | Initial business documentation |
+| 1.1 | January 2026 | Updated episode count (303+), roadmap status, caching architecture |
 
 ---
 

@@ -1,7 +1,7 @@
 # Lenny's Dojo - Technical Documentation
 
-> **Version:** 1.0.0  
-> **Last Updated:** January 2025  
+> **Version:** 1.1.0  
+> **Last Updated:** January 2026  
 > **Repository:** [ChatPRD/lennys-podcast-transcripts](https://github.com/ChatPRD/lennys-podcast-transcripts)
 
 ---
@@ -35,14 +35,15 @@
 ### Key Capabilities
 
 - **Interview Simulator**: AI-driven practice sessions with personalized feedback
-- **Company Intelligence**: Deep-dive analysis of 120+ companies discussed on the podcast
-- **Framework Library**: 50+ PM frameworks extracted from podcast discussions
+- **Company Intelligence**: Deep-dive analysis of 180+ companies discussed on the podcast
+- **Framework Library**: 80+ PM frameworks extracted from podcast discussions
 - **Progress Tracking**: Comprehensive dashboard with readiness scoring
 - **Automated Sync**: Daily synchronization with podcast transcript repository
+- **Dual-Layer Caching**: localStorage for instant loads + database cache for persistence
 
 ### Problem Statement
 
-Product Manager candidates lack access to real-world case studies and authentic decision-making scenarios. Lenny's Dojo bridges this gap by mining insights from 284+ podcast episodes featuring top product leaders.
+Product Manager candidates lack access to real-world case studies and authentic decision-making scenarios. Lenny's Dojo bridges this gap by mining insights from 303+ podcast episodes featuring top product leaders.
 
 ---
 
@@ -71,6 +72,7 @@ Product Manager candidates lack access to real-world case studies and authentic 
 │  - extract-intelligence        │  Auth                          │
 │  - seed-intelligence-cache     │  - Supabase Auth               │
 │  - sync-new-episodes           │  - Email/Password              │
+│  - get-cache-status            │                                │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -423,6 +425,22 @@ interface ExtractRequest {
 
 **Trigger:** pg_cron job at 2:00 AM UTC daily
 
+### 6. `get-cache-status`
+
+**Purpose:** Returns the count of cached episodes in the database.
+
+**Endpoint:** `POST /functions/v1/get-cache-status`
+
+**Authentication:** None (public read)
+
+**Response:**
+```typescript
+interface CacheStatus {
+  cached: number;      // Number of episodes in cache
+  timestamp: string;   // ISO timestamp of check
+}
+```
+
 ---
 
 ## Data Models
@@ -524,9 +542,13 @@ interface UserProgress {
 - Exposes signIn/signUp/signOut methods
 
 #### `DojoDataContext`
-- Orchestrates data loading
+- Orchestrates data loading via `useDojoSync` hook
 - Provides companies/frameworks/episodes
 - Manages sync operations
+- **Dual-layer loading strategy:**
+  1. First renders from localStorage for instant display
+  2. Background-refreshes from database cache to ensure freshness
+  3. Overwrites localStorage with authoritative database data
 
 ---
 
@@ -748,6 +770,7 @@ USING (auth.role() = 'service_role');
 | extract-intelligence | Service Role Key |
 | seed-intelligence-cache | Service Role Key |
 | sync-new-episodes | Service Role Key OR CRON_SECRET |
+| get-cache-status | None (public read) |
 
 ### Input Validation
 
@@ -929,4 +952,4 @@ This project is proprietary software. All rights reserved.
 
 ---
 
-*Documentation generated for Lenny's Dojo v1.0.0*
+*Documentation generated for Lenny's Dojo v1.1.0*
