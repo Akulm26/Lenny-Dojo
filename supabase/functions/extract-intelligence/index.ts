@@ -191,8 +191,23 @@ Include ONLY items explicitly discussed. Empty arrays are fine if nothing fits a
     });
 
   } catch (error) {
-    console.error('Extract intelligence error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
+
+    // Common transient case: client disconnected / incomplete body.
+    // Avoid treating it as a hard runtime error.
+    if (
+      (error as any)?.name === 'Http' &&
+      typeof message === 'string' &&
+      message.toLowerCase().includes('error reading a body')
+    ) {
+      console.warn('Extract intelligence request body read failed:', message);
+      return new Response(
+        JSON.stringify({ error: 'Request body was not fully received. Please retry.' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    console.error('Extract intelligence error:', error);
     return new Response(
       JSON.stringify({ error: message }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
