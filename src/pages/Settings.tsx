@@ -238,13 +238,21 @@ export default function Settings() {
             </div>
           </section>
           
-          {/* Data Sync */}
+          {/* Data Sync - Cache Refresh */}
           <section className="p-6 rounded-xl border border-border bg-card">
-            <h2 className="text-lg font-semibold mb-4">Data Sync</h2>
+            <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <RefreshCw className="h-5 w-5 text-primary" />
+              Refresh Data
+            </h2>
+            
+            <p className="text-sm text-muted-foreground mb-4">
+              Reload companies and frameworks from the database cache. 
+              This is fast and doesn't re-extract any data.
+            </p>
             
             <div className="space-y-4">
               <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Last synced</span>
+                <span className="text-muted-foreground">Last refreshed</span>
                 <span>
                   {syncMetadata?.last_sync_at 
                     ? new Date(syncMetadata.last_sync_at).toLocaleString()
@@ -254,29 +262,16 @@ export default function Settings() {
               </div>
               
               <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Episodes loaded</span>
+                <span className="text-muted-foreground">Companies loaded</span>
                 <span>{syncMetadata?.total_episodes || 0}</span>
               </div>
-              
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Transcripts through</span>
-                <span>{syncMetadata?.latest_episode_date || 'N/A'}</span>
-              </div>
-              
-              {cacheCount > 0 && syncMetadata?.total_episodes && cacheCount !== syncMetadata.total_episodes && (
-                <p className="text-xs text-muted-foreground bg-muted/50 p-2 rounded">
-                  <strong>Note:</strong> "Episodes cached" ({cacheCount}) reflects all episodes stored in the database, 
-                  while "Episodes loaded" ({syncMetadata.total_episodes}) is the count from the latest GitHub sync. 
-                  The cache may include older episodes no longer in the source repository.
-                </p>
-              )}
               
               {/* Show sync status message */}
               {(status === 'syncing' || status === 'processing' || status === 'checking') && (
                 <div className="p-3 rounded-lg bg-primary/10 text-sm">
                   <div className="flex items-center gap-2">
                     <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                    <span>{progressMessage || 'Syncing...'}</span>
+                    <span>{progressMessage || 'Loading...'}</span>
                   </div>
                 </div>
               )}
@@ -284,18 +279,18 @@ export default function Settings() {
               <div className="pt-2">
                 <Button
                   onClick={handleCheckUpdates}
-                  disabled={status === 'syncing' || status === 'processing'}
+                  disabled={status === 'syncing' || status === 'processing' || status === 'checking'}
                   className="gap-2"
                 >
-                  {status === 'syncing' || status === 'processing' ? (
+                  {status === 'syncing' || status === 'processing' || status === 'checking' ? (
                     <>
                       <RefreshCw className="h-4 w-4 animate-spin" />
-                      Syncing...
+                      Loading...
                     </>
                   ) : (
                     <>
                       <RefreshCw className="h-4 w-4" />
-                      Check for Updates
+                      Refresh from Cache
                     </>
                   )}
                 </Button>

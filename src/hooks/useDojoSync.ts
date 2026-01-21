@@ -101,126 +101,59 @@ export function useDojoSync() {
     loadInitialData();
   }, []);
 
-  const performFullSync = useCallback(async () => {
+  // Light sync: just refresh from cache, no extraction
+  const refreshFromCache = useCallback(async () => {
     try {
       setState(prev => ({
         ...prev,
-        status: 'syncing',
-        progress: 0,
-        progressMessage: 'Fetching episode list...',
+        status: 'checking',
+        progress: 10,
+        progressMessage: 'Refreshing from database cache...',
         error: null
       }));
 
-      const episodeIds = await fetchEpisodeList();
-      const total = episodeIds.length;
-
-      setState(prev => ({
-        ...prev,
-        totalEpisodes: total,
-        progress: 5,
-        progressMessage: `Found ${total} episodes. Loading transcripts...`
-      }));
-
-      const episodes: Episode[] = [];
-      const batchSize = 10;
-
-      for (let i = 0; i < episodeIds.length; i += batchSize) {
-        const batch = episodeIds.slice(i, i + batchSize);
-        const batchResults = await Promise.allSettled(
-          batch.map(id => fetchAndParseEpisode(id))
-        );
-
-        batchResults.forEach((result, idx) => {
-          if (result.status === 'fulfilled') {
-            episodes.push(result.value);
-          } else {
-            console.warn(`Failed to fetch ${batch[idx]}:`, result.reason);
-          }
+      // Load companies and frameworks from Supabase cache
+      const { companies, frameworks } = await loadCachedCompaniesAndFrameworks();
+      
+      if (companies.length > 0) {
+        // Store in localStorage for future quick loads
+        storeCompanies(companies);
+        storeFrameworks(frameworks);
+        
+        // Update sync status
+        updateSyncStatus({
+          status: 'complete',
+          last_sync: new Date().toISOString(),
+          total_episodes: companies.reduce((sum, c) => sum + (c.episode_count || 0), 0),
+          error_message: null
         });
-
-        const progress = Math.round(((i + batch.length) / total) * 70) + 5;
+        
         setState(prev => ({
           ...prev,
-          progress,
-          progressMessage: `Loading transcripts... ${episodes.length}/${total}`
+          status: 'complete',
+          progress: 100,
+          progressMessage: `Loaded ${companies.length} companies from cache`,
+          companies,
+          frameworks,
+          lastSyncDate: new Date().toISOString(),
         }));
-
-        if (i + batchSize < episodeIds.length) {
-          await new Promise(r => setTimeout(r, 100));
-        }
+        return;
       }
-
-      storeEpisodes(episodes);
-      setState(prev => ({ ...prev, episodes }));
-
-      setState(prev => ({
-        ...prev,
-        status: 'processing',
-        progress: 75,
-        progressMessage: 'Extracting company intelligence...'
-      }));
-
-      let companies: CompanyIntelligence[] = [];
-      let frameworks: Framework[] = [];
-      let extractionError: string | null = null;
-
-      try {
-        const result = await extractAllIntelligence(episodes, (current, total, message) => {
-          const progress = 75 + Math.round((current / total) * 20);
-          setState(prev => ({ ...prev, progress, progressMessage: message }));
-        });
-        companies = result.companies;
-        frameworks = result.frameworks;
-      } catch (error) {
-        // If extraction fails (e.g., 402 payment required), log but don't fail the sync
-        // The cache may have partial data we can still use
-        console.warn('Intelligence extraction failed:', error);
-        extractionError = error instanceof Error ? error.message : 'Extraction failed';
-        
-        // Try to use whatever was already cached in localStorage
-        companies = getStoredCompanies<CompanyIntelligence>();
-        frameworks = getStoredFrameworks<Framework>();
-      }
-
-      // Ensure state updates even if storage write fails
-      setState(prev => ({ ...prev, companies, frameworks }));
-
-      if (companies.length > 0) {
-        storeCompanies(companies);
-      }
-      if (frameworks.length > 0) {
-        storeFrameworks(frameworks);
-      }
-
-      const { sha, date } = await checkForUpdates();
-
-      updateSyncStatus({
-        status: 'complete',
-        last_sync: new Date().toISOString(),
-        last_commit_sha: sha,
-        total_episodes: episodes.length,
-        latest_episode_date: date,
-        error_message: null
-      });
-
+      
+      // No cached data - inform user to seed cache first
       setState(prev => ({
         ...prev,
         status: 'complete',
         progress: 100,
-        progressMessage: `Synced ${episodes.length} episodes`,
-        episodes,
-        companies,
-        frameworks,
-        lastSyncDate: new Date().toISOString(),
-        latestTranscriptDate: date
+        progressMessage: 'No cached data. Use "Seed Intelligence Cache" first.',
       }));
-
+      
     } catch (error) {
-      console.error('Full sync failed:', error);
+      console.error('Cache refresh failed:', error);
       setState(prev => ({
         ...prev,
         status: 'error',
-        error: error instanceof Error ? error.message : 'Sync failed'
+        error: error instanceof Error ? error.message : 'Failed to load cache'
       }));
     }
   }, []);
@@ -236,51 +169,14 @@ export function useDojoSync() {
       return;
     }
     
-    // Try to load from Supabase cache first
-    setState(prev => ({ ...prev, status: 'checking', progressMessage: 'Checking cache...' }));
-    
-    try {
-      const { companies, frameworks } = await loadCachedCompaniesAndFrameworks();
-      
-      if (companies.length > 0) {
-        storeCompanies(companies);
-        storeFrameworks(frameworks);
-        
-        setState(prev => ({ 
-          ...prev, 
-          status: 'complete', 
-          progressMessage: `Loaded ${companies.length} companies`,
-          companies,
-          frameworks
-        }));
-        return;
-      }
-    } catch (e) {
-      console.warn('Cache check failed:', e);
-    }
-    
-    // No cached data - perform full sync
-    try {
-      const { hasUpdates } = await checkForUpdates();
-      if (hasUpdates || state.companies.length === 0) {
-        setState(prev => ({ ...prev, progressMessage: 'Syncing episodes...' }));
-        await performFullSync();
-      } else {
-        setState(prev => ({ ...prev, status: 'complete', progressMessage: 'Already up to date' }));
-      }
-    } catch (error) {
-      console.error('Sync check failed:', error);
-      setState(prev => ({
-        ...prev,
-        status: 'error',
-        error: error instanceof Error ? error.message : 'Failed to check for updates'
-      }));
-    }
-  }, [performFullSync, state.companies.length, state.frameworks.length]);
+    // Try to load from Supabase cache
+    await refreshFromCache();
+  }, [refreshFromCache, state.companies.length, state.frameworks.length]);
 
   const manualSync = useCallback(() => {
-    performFullSync();
-  }, [performFullSync]);
+    // Manual sync now just refreshes from cache - no extraction
+    refreshFromCache();
+  }, [refreshFromCache]);
 
   return {
     ...state,
