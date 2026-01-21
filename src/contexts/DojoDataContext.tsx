@@ -30,8 +30,9 @@ const DojoDataContext: React.Context<DojoDataContextValue | null> =
 export function DojoDataProvider({ children }: { children: ReactNode }) {
   const dojoSync = useDojoSync();
   
-  // NOTE: Auto-sync removed - users must explicitly trigger sync via Settings or refresh button
-  // This prevents unwanted caching/sync on login which ruins the user experience
+  // Load cached data on mount - but don't auto-sync
+  // The useDojoSync hook handles loading from localStorage/Supabase cache in its own useEffect
+  // Users must explicitly trigger sync via Settings or refresh button
 
   return (
     <DojoDataContext.Provider value={dojoSync}>
