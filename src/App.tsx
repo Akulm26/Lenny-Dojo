@@ -10,6 +10,7 @@ import Practice from "./pages/Practice";
 import PracticeSession from "./pages/PracticeSession";
 import Evaluation from "./pages/Evaluation";
 import Companies from "./pages/Companies";
+import CompanyDetail from "./pages/CompanyDetail";
 import Frameworks from "./pages/Frameworks";
 import Progress from "./pages/Progress";
 import Settings from "./pages/Settings";
@@ -30,6 +31,7 @@ const App = () => (
             <Route path="/practice/session" element={<PracticeSession />} />
             <Route path="/practice/evaluate" element={<Evaluation />} />
             <Route path="/companies" element={<Companies />} />
+            <Route path="/companies/:slug" element={<CompanyDetail />} />
             <Route path="/frameworks" element={<Frameworks />} />
             <Route path="/progress" element={<Progress />} />
             <Route path="/settings" element={<Settings />} />
