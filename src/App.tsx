@@ -50,10 +50,26 @@ const App = () => (
                   <Evaluation />
                 </ProtectedRoute>
               } />
-              <Route path="/companies" element={<Companies />} />
-              <Route path="/companies/:slug" element={<CompanyDetail />} />
-              <Route path="/frameworks" element={<Frameworks />} />
-              <Route path="/frameworks/:slug" element={<FrameworkDetail />} />
+              <Route path="/companies" element={
+                <ProtectedRoute>
+                  <Companies />
+                </ProtectedRoute>
+              } />
+              <Route path="/companies/:slug" element={
+                <ProtectedRoute>
+                  <CompanyDetail />
+                </ProtectedRoute>
+              } />
+              <Route path="/frameworks" element={
+                <ProtectedRoute>
+                  <Frameworks />
+                </ProtectedRoute>
+              } />
+              <Route path="/frameworks/:slug" element={
+                <ProtectedRoute>
+                  <FrameworkDetail />
+                </ProtectedRoute>
+              } />
               <Route path="/progress" element={<Progress />} />
               <Route path="/settings" element={<Settings />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
