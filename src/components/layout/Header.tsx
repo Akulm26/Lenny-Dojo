@@ -1,4 +1,4 @@
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { 
@@ -8,12 +8,22 @@ import {
   BarChart3, 
   Settings,
   Menu,
-  X
+  X,
+  LogIn,
+  LogOut,
+  User
 } from 'lucide-react';
 import { useState } from 'react';
 import { SyncIndicator } from './SyncIndicator';
 import { SpotlightSearch } from '@/components/SpotlightSearch';
-
+import { useAuth } from '@/contexts/AuthContext';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 const navItems = [
   { href: '/practice', label: 'Practice', icon: Dumbbell },
   { href: '/companies', label: 'Companies', icon: Building2 },
@@ -23,7 +33,14 @@ const navItems = [
 
 export function Header() {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { user, signOut, loading } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate('/');
+  };
   
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -69,6 +86,38 @@ export function Header() {
               <Settings className="h-4 w-4" />
             </Button>
           </Link>
+
+          {/* Auth buttons */}
+          {!loading && (
+            <>
+              {user ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-9 w-9">
+                      <User className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    <div className="px-2 py-1.5 text-sm text-muted-foreground truncate">
+                      {user.email}
+                    </div>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={handleSignOut}>
+                      <LogOut className="mr-2 h-4 w-4" />
+                      Sign out
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : (
+                <Link to="/login" className="hidden md:flex">
+                  <Button variant="outline" size="sm" className="gap-1.5">
+                    <LogIn className="h-4 w-4" />
+                    Sign in
+                  </Button>
+                </Link>
+              )}
+            </>
+          )}
           
           {/* Mobile menu button */}
           <Button
@@ -111,6 +160,29 @@ export function Header() {
               <Settings className="h-5 w-5" />
               Settings
             </Link>
+            {!loading && (
+              user ? (
+                <button
+                  onClick={() => {
+                    handleSignOut();
+                    setMobileMenuOpen(false);
+                  }}
+                  className="nav-link py-3 text-left"
+                >
+                  <LogOut className="h-5 w-5" />
+                  Sign out
+                </button>
+              ) : (
+                <Link
+                  to="/login"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="nav-link py-3"
+                >
+                  <LogIn className="h-5 w-5" />
+                  Sign in
+                </Link>
+              )
+            )}
           </nav>
         </div>
       )}
