@@ -7,64 +7,7 @@ const corsHeaders = {
 };
 
 const GITHUB_API_BASE = 'https://api.github.com/repos/nicoles/lennys-podcast-transcripts';
-
-// Generate demo intelligence (same as seed-intelligence-cache)
-function generateDemoIntelligence(episodeId: string, guestName: string, episodeTitle: string) {
-  const companyTypes = ['B2B SaaS', 'Consumer Tech', 'Marketplace', 'Fintech', 'E-commerce', 'Developer Tools', 'AI/ML', 'Healthcare Tech'];
-  const stages = ['Seed', 'Series A', 'Series B', 'Series C', 'Growth', 'Public'];
-  const industries = ['Technology', 'Finance', 'Healthcare', 'Retail', 'Media', 'Enterprise', 'Consumer'];
-  
-  const frameworkCategories = ['Growth', 'Product', 'Leadership', 'Strategy', 'Culture', 'Marketing', 'Sales'];
-  
-  const numCompanies = 2 + Math.floor(Math.random() * 3);
-  const companies = [];
-  
-  for (let i = 0; i < numCompanies; i++) {
-    const companyName = i === 0 ? `${guestName.split(' ')[1] || guestName}'s Company` : `Partner Co ${i}`;
-    companies.push({
-      name: companyName,
-      role: i === 0 ? 'Founder & CEO' : ['Advisor', 'Board Member', 'Investor', 'Partner'][Math.floor(Math.random() * 4)],
-      timeframe: `${2015 + Math.floor(Math.random() * 8)}-${i === 0 ? 'Present' : 2020 + Math.floor(Math.random() * 4)}`,
-      context: `Discussed in episode about ${episodeTitle.toLowerCase()}`,
-      stage: stages[Math.floor(Math.random() * stages.length)],
-      type: companyTypes[Math.floor(Math.random() * companyTypes.length)],
-      industry: industries[Math.floor(Math.random() * industries.length)],
-    });
-  }
-
-  const numFrameworks = 1 + Math.floor(Math.random() * 2);
-  const frameworks = [];
-  
-  for (let i = 0; i < numFrameworks; i++) {
-    const category = frameworkCategories[Math.floor(Math.random() * frameworkCategories.length)];
-    frameworks.push({
-      name: `The ${guestName.split(' ')[0]} ${category} Framework`,
-      category,
-      description: `A ${category.toLowerCase()} approach discussed by ${guestName} for building successful products.`,
-      steps: [
-        'Define your core metrics',
-        'Identify key leverage points',
-        'Build feedback loops',
-        'Iterate and measure',
-      ],
-      source_episode: episodeId,
-      guest: guestName,
-    });
-  }
-
-  return {
-    companies,
-    frameworks,
-    question_seeds: [
-      { topic: 'career', question: `What drove ${guestName}'s career decisions?` },
-      { topic: 'product', question: `How does ${guestName} approach product development?` },
-    ],
-    memorable_quotes: [
-      { quote: `"The best products solve real problems."`, context: 'On product strategy' },
-    ],
-    _source: 'demo_sync',
-  };
-}
+const LOVABLE_AI_URL = 'https://ai.gateway.lovable.dev/v1/chat/completions';
 
 async function fetchEpisodeList(): Promise<string[]> {
   const response = await fetch(`${GITHUB_API_BASE}/contents/transcripts`, {
@@ -81,7 +24,7 @@ async function fetchEpisodeList(): Promise<string[]> {
     .map((item: any) => item.name);
 }
 
-async function fetchEpisodeMetadata(episodeId: string): Promise<{ guest: string; title: string } | null> {
+async function fetchEpisodeContent(episodeId: string): Promise<{ guest: string; title: string; transcript: string } | null> {
   try {
     const response = await fetch(
       `https://raw.githubusercontent.com/nicoles/lennys-podcast-transcripts/main/transcripts/${episodeId}/transcript.md`
@@ -98,13 +41,132 @@ async function fetchEpisodeMetadata(episodeId: string): Promise<{ guest: string;
     const guestMatch = frontmatter.match(/guest:\s*["']?([^"'\n]+)["']?/);
     const titleMatch = frontmatter.match(/title:\s*["']?([^"'\n]+)["']?/);
     
+    // Extract transcript body (after frontmatter)
+    const transcript = content.replace(/^---\n[\s\S]*?\n---\n*/, '').trim();
+    
     return {
       guest: guestMatch?.[1]?.trim() || 'Unknown Guest',
       title: titleMatch?.[1]?.trim() || episodeId,
+      transcript,
     };
   } catch {
     return null;
   }
+}
+
+async function extractIntelligenceWithAI(
+  transcript: string,
+  episodeId: string,
+  guestName: string,
+  episodeTitle: string,
+  apiKey: string
+): Promise<any> {
+  // Truncate transcript if too long
+  const maxChars = 60000;
+  const truncatedTranscript = transcript.length > maxChars 
+    ? transcript.substring(0, maxChars) + '\n\n[TRANSCRIPT TRUNCATED]'
+    : transcript;
+
+  const systemPrompt = `You are an expert analyst extracting structured intelligence from podcast transcripts.
+Extract ONLY information that is EXPLICITLY STATED in the transcript. Do not infer or assume.
+
+Return a JSON object with this structure:
+{
+  "companies": [
+    {
+      "name": "Company Name",
+      "is_guest_company": true/false,
+      "mention_context": "Brief context of how mentioned",
+      "decisions": [{"what": "", "when": null, "why": "", "outcome": "", "quote": ""}],
+      "opinions": [{"opinion": "", "quote": ""}],
+      "metrics_mentioned": []
+    }
+  ],
+  "frameworks": [
+    {
+      "name": "Framework Name",
+      "creator": "Who created it",
+      "category": "Growth/Product/Leadership/etc",
+      "explanation": "What it is",
+      "when_to_use": "When to apply",
+      "example": "Example from transcript",
+      "quote": "Direct quote"
+    }
+  ],
+  "question_seeds": [
+    {
+      "type": "product/growth/leadership/strategy",
+      "company": "Company name",
+      "situation": "Brief situation",
+      "what_happened": "What happened",
+      "usable_quotes": []
+    }
+  ],
+  "memorable_quotes": [
+    {
+      "quote": "Exact quote",
+      "topic": "Topic",
+      "context": "Context"
+    }
+  ]
+}`;
+
+  const userPrompt = `Extract intelligence from this podcast transcript featuring ${guestName}:
+
+Episode: ${episodeTitle}
+
+TRANSCRIPT:
+${truncatedTranscript}
+
+Return ONLY valid JSON matching the schema. Extract real companies, frameworks, and quotes from the transcript.`;
+
+  const response = await fetch(LOVABLE_AI_URL, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'google/gemini-3-flash-preview',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      temperature: 0.3,
+    }),
+  });
+
+  if (!response.ok) {
+    const status = response.status;
+    if (status === 429) {
+      throw new Error('RATE_LIMITED');
+    }
+    if (status === 402) {
+      throw new Error('PAYMENT_REQUIRED');
+    }
+    throw new Error(`AI API error: ${status}`);
+  }
+
+  const data = await response.json();
+  const content = data.choices?.[0]?.message?.content || '';
+  
+  // Parse JSON from response
+  const jsonMatch = content.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    throw new Error('No valid JSON in AI response');
+  }
+  
+  const intelligence = JSON.parse(jsonMatch[0]);
+  
+  return {
+    ...intelligence,
+    _source: {
+      episode_id: episodeId,
+      guest_name: guestName,
+      episode_title: episodeTitle,
+      extracted_at: new Date().toISOString(),
+    },
+  };
 }
 
 serve(async (req) => {
@@ -115,7 +177,12 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
     const supabase = createClient(supabaseUrl, supabaseKey);
+
+    if (!lovableApiKey) {
+      throw new Error('LOVABLE_API_KEY not configured');
+    }
 
     console.log('Checking GitHub for new episodes...');
     
@@ -151,52 +218,73 @@ serve(async (req) => {
       );
     }
 
-    // Fetch metadata and seed new episodes (batch of 10 at a time)
-    const BATCH_SIZE = 10;
-    let seeded = 0;
+    // Process new episodes one at a time (to avoid rate limits)
+    let processed = 0;
     const errors: string[] = [];
+    const MAX_PER_RUN = 5; // Limit per cron run to avoid timeouts
 
-    for (let i = 0; i < newEpisodeIds.length; i += BATCH_SIZE) {
-      const batch = newEpisodeIds.slice(i, i + BATCH_SIZE);
-      
-      const metadataResults = await Promise.all(
-        batch.map(async (id) => {
-          const meta = await fetchEpisodeMetadata(id);
-          return meta ? { id, ...meta } : null;
-        })
-      );
+    for (const episodeId of newEpisodeIds.slice(0, MAX_PER_RUN)) {
+      try {
+        console.log(`Processing episode: ${episodeId}`);
+        
+        // Fetch transcript content
+        const content = await fetchEpisodeContent(episodeId);
+        if (!content) {
+          errors.push(`${episodeId}: Could not fetch content`);
+          continue;
+        }
 
-      const validEpisodes = metadataResults.filter(Boolean) as Array<{ id: string; guest: string; title: string }>;
+        // Extract intelligence using AI
+        const intelligence = await extractIntelligenceWithAI(
+          content.transcript,
+          episodeId,
+          content.guest,
+          content.title,
+          lovableApiKey
+        );
 
-      if (validEpisodes.length > 0) {
-        const records = validEpisodes.map(ep => ({
-          episode_id: ep.id,
-          guest_name: ep.guest,
-          episode_title: ep.title,
-          intelligence: generateDemoIntelligence(ep.id, ep.guest, ep.title),
-          extracted_at: new Date().toISOString(),
-        }));
-
+        // Store in cache
         const { error: insertError } = await supabase
           .from('episode_intelligence_cache')
-          .upsert(records, { onConflict: 'episode_id' });
+          .upsert({
+            episode_id: episodeId,
+            guest_name: content.guest,
+            episode_title: content.title,
+            intelligence,
+            extracted_at: new Date().toISOString(),
+          }, { onConflict: 'episode_id' });
 
         if (insertError) {
-          errors.push(`Batch ${i}: ${insertError.message}`);
+          errors.push(`${episodeId}: ${insertError.message}`);
         } else {
-          seeded += validEpisodes.length;
+          processed++;
+          console.log(`Successfully processed: ${episodeId}`);
         }
+
+        // Small delay between episodes to avoid rate limits
+        await new Promise(r => setTimeout(r, 2000));
+
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg === 'RATE_LIMITED' || msg === 'PAYMENT_REQUIRED') {
+          console.log(`Stopping due to: ${msg}`);
+          errors.push(`Stopped: ${msg}`);
+          break;
+        }
+        errors.push(`${episodeId}: ${msg}`);
       }
     }
 
-    console.log(`Seeded ${seeded} new episodes`);
+    console.log(`Processed ${processed} new episodes`);
 
     return new Response(
       JSON.stringify({
-        message: `Synced ${seeded} new episodes`,
+        message: `Synced ${processed} new episodes with real AI extraction`,
         total: allEpisodeIds.length,
         cached: cachedIds.size,
-        new: seeded,
+        newFound: newEpisodeIds.length,
+        processed,
+        remaining: newEpisodeIds.length - processed,
         errors: errors.length > 0 ? errors : undefined,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
