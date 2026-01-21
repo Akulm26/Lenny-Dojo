@@ -273,6 +273,7 @@ export async function extractAllIntelligence(
 
     // Stop early if we hit payment or rate limit issues
     if (sawPaymentRequired || sawRateLimit) {
+      console.warn('Stopping extraction early due to rate limit or payment issue. Returning partial results.');
       break;
     }
 
@@ -283,12 +284,13 @@ export async function extractAllIntelligence(
     }
   }
 
+  // Log warnings but don't throw - return whatever we have
   if (sawPaymentRequired) {
-    throw new Error('Payment required (402). Please add funds to your Lovable AI workspace in Settings → Workspace → Usage.');
+    console.warn('Payment required (402) - returning partial results from cache only');
   }
 
   if (sawRateLimit) {
-    throw new Error('AI rate limited (429). Please wait a few minutes and try syncing again.');
+    console.warn('Rate limited (429) - returning partial results');
   }
 
   // Convert maps to arrays and sort

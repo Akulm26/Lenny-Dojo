@@ -121,16 +121,37 @@ export function useDojoSync() {
         progressMessage: 'Extracting company intelligence...'
       }));
 
-      const { companies, frameworks } = await extractAllIntelligence(episodes, (current, total, message) => {
-        const progress = 75 + Math.round((current / total) * 20);
-        setState(prev => ({ ...prev, progress, progressMessage: message }));
-      });
+      let companies: CompanyIntelligence[] = [];
+      let frameworks: Framework[] = [];
+      let extractionError: string | null = null;
+
+      try {
+        const result = await extractAllIntelligence(episodes, (current, total, message) => {
+          const progress = 75 + Math.round((current / total) * 20);
+          setState(prev => ({ ...prev, progress, progressMessage: message }));
+        });
+        companies = result.companies;
+        frameworks = result.frameworks;
+      } catch (error) {
+        // If extraction fails (e.g., 402 payment required), log but don't fail the sync
+        // The cache may have partial data we can still use
+        console.warn('Intelligence extraction failed:', error);
+        extractionError = error instanceof Error ? error.message : 'Extraction failed';
+        
+        // Try to use whatever was already cached in localStorage
+        companies = getStoredCompanies<CompanyIntelligence>();
+        frameworks = getStoredFrameworks<Framework>();
+      }
 
       // Ensure state updates even if storage write fails
       setState(prev => ({ ...prev, companies, frameworks }));
 
-      storeCompanies(companies);
-      storeFrameworks(frameworks);
+      if (companies.length > 0) {
+        storeCompanies(companies);
+      }
+      if (frameworks.length > 0) {
+        storeFrameworks(frameworks);
+      }
 
       const { sha, date } = await checkForUpdates();
 
