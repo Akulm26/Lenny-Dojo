@@ -56,13 +56,14 @@ function validateEpisode(value: unknown, index: number): EpisodeInput {
 }
 
 // Validate request body
-function validateRequest(body: unknown): EpisodeInput[] {
+function validateRequest(body: unknown): { episodes: EpisodeInput[]; forceReExtract: boolean } {
   if (!body || typeof body !== 'object') {
     throw new Error('Request body must be a valid JSON object');
   }
 
   const obj = body as Record<string, unknown>;
   const episodes = obj.episodes;
+  const forceReExtract = obj.forceReExtract === true;
 
   if (!Array.isArray(episodes)) {
     throw new Error('episodes must be an array');
@@ -76,7 +77,10 @@ function validateRequest(body: unknown): EpisodeInput[] {
     throw new Error(`episodes array exceeds maximum length of ${MAX_EPISODES}`);
   }
 
-  return episodes.map((ep, i) => validateEpisode(ep, i));
+  return { 
+    episodes: episodes.map((ep, i) => validateEpisode(ep, i)),
+    forceReExtract
+  };
 }
 
 // Fetch transcript from GitHub
@@ -184,8 +188,11 @@ serve(async (req) => {
     }
 
     let episodes: EpisodeInput[];
+    let forceReExtract = false;
     try {
-      episodes = validateRequest(rawBody);
+      const validated = validateRequest(rawBody);
+      episodes = validated.episodes;
+      forceReExtract = validated.forceReExtract;
     } catch (validationError) {
       return new Response(
         JSON.stringify({ error: validationError instanceof Error ? validationError.message : 'Validation failed' }),
@@ -201,14 +208,16 @@ serve(async (req) => {
       .in('episode_id', episodeIds);
 
     const cachedIds = new Set((existingCache || []).map(e => e.episode_id));
-    const uncachedEpisodes = episodes.filter(e => !cachedIds.has(e.id));
+    
+    // If forceReExtract is true, process all episodes; otherwise only uncached ones
+    const episodesToProcess = forceReExtract ? episodes : episodes.filter(e => !cachedIds.has(e.id));
 
-    console.log(`Found ${cachedIds.size} cached, ${uncachedEpisodes.length} to process`);
+    console.log(`Found ${cachedIds.size} cached, ${episodesToProcess.length} to process (force=${forceReExtract})`);
 
-    if (uncachedEpisodes.length === 0) {
+    if (episodesToProcess.length === 0) {
       return new Response(
         JSON.stringify({ 
-          message: "All episodes already cached", 
+          message: "All episodes already cached. Use forceReExtract: true to re-extract.", 
           cached: cachedIds.size,
           seeded: 0 
         }),
@@ -220,8 +229,8 @@ serve(async (req) => {
     let totalSeeded = 0;
     const errors: string[] = [];
 
-    for (let i = 0; i < uncachedEpisodes.length; i += BATCH_SIZE) {
-      const batch = uncachedEpisodes.slice(i, i + BATCH_SIZE);
+    for (let i = 0; i < episodesToProcess.length; i += BATCH_SIZE) {
+      const batch = episodesToProcess.slice(i, i + BATCH_SIZE);
       console.log(`Processing batch ${Math.floor(i / BATCH_SIZE) + 1}: ${batch.length} episodes`);
       
       for (const episode of batch) {
@@ -273,7 +282,7 @@ serve(async (req) => {
       }
       
       // Longer delay between batches to avoid rate limits
-      if (i + BATCH_SIZE < uncachedEpisodes.length) {
+      if (i + BATCH_SIZE < episodesToProcess.length) {
         console.log(`Waiting ${DELAY_BETWEEN_BATCHES}ms before next batch...`);
         await sleep(DELAY_BETWEEN_BATCHES);
       }
