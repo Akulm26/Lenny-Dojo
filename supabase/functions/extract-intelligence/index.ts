@@ -1,5 +1,4 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -9,8 +8,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Authentication - allows service role OR authenticated users
-async function authenticateRequest(req: Request): Promise<{ authenticated: boolean; error?: string }> {
+// Service role authentication - only allow internal/admin access
+function authenticateServiceRole(req: Request): { authenticated: boolean; error?: string } {
   const authHeader = req.headers.get('Authorization');
   
   if (!authHeader?.startsWith('Bearer ')) {
@@ -19,28 +18,12 @@ async function authenticateRequest(req: Request): Promise<{ authenticated: boole
 
   const token = authHeader.replace('Bearer ', '');
   
-  // Option 1: Service role key (for server-side operations)
+  // Check if it's the service role key
   if (token === SUPABASE_SERVICE_ROLE_KEY) {
     return { authenticated: true };
   }
-  
-  // Option 2: Authenticated user (for client-side sync)
-  try {
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_ANON_KEY')!,
-      { global: { headers: { Authorization: authHeader } } }
-    );
-    
-    const { data, error } = await supabase.auth.getUser();
-    if (!error && data?.user) {
-      return { authenticated: true };
-    }
-  } catch {
-    // Fall through to unauthorized
-  }
 
-  return { authenticated: false, error: 'Unauthorized - valid authentication required' };
+  return { authenticated: false, error: 'Unauthorized - service role required' };
 }
 
 // Validation constants
@@ -91,8 +74,8 @@ serve(async (req) => {
   }
 
   try {
-    // Authenticate - allow service role OR authenticated users
-    const auth = await authenticateRequest(req);
+    // Authenticate - require service role for admin operations
+    const auth = authenticateServiceRole(req);
     if (!auth.authenticated) {
       return new Response(
         JSON.stringify({ error: auth.error || 'Unauthorized' }),
