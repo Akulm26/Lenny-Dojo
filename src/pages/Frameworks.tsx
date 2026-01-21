@@ -3,31 +3,19 @@ import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { 
   Search,
   BookOpen,
   ArrowRight,
   User,
-  Podcast
+  Podcast,
+  RefreshCw
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { Framework, FrameworkCategory } from '@/types';
+import { useDojoData } from '@/contexts/DojoDataContext';
 
-// Demo frameworks data - in production this would come from transcript processing
-const DEMO_FRAMEWORKS: Partial<Framework>[] = [
-  { id: 'rice', name: 'RICE Framework', creator: 'Intercom', category: 'prioritization', description: 'Reach, Impact, Confidence, Effort scoring for prioritization', episodes: ['ep1'] },
-  { id: 'north-star', name: 'North Star Metric', creator: null, category: 'metrics', description: 'Single metric that best captures the core value your product delivers', episodes: ['ep2', 'ep3'] },
-  { id: 'jobs-to-be-done', name: 'Jobs to Be Done', creator: 'Clayton Christensen', category: 'strategy', description: 'Understanding what job customers hire your product to do', episodes: ['ep4'] },
-  { id: 'working-backwards', name: 'Working Backwards', creator: 'Amazon', category: 'execution', description: 'Start with the press release and work backwards to the product', episodes: ['ep5'] },
-  { id: 'okrs', name: 'OKRs', creator: 'Andy Grove', category: 'execution', description: 'Objectives and Key Results for goal setting', episodes: ['ep6', 'ep7'] },
-  { id: 'iceberg', name: 'Iceberg Model', creator: null, category: 'strategy', description: 'Surface events, patterns, structures, and mental models', episodes: ['ep8'] },
-  { id: 'lean-startup', name: 'Lean Startup', creator: 'Eric Ries', category: 'execution', description: 'Build-Measure-Learn feedback loop', episodes: ['ep9'] },
-  { id: 'pirate-metrics', name: 'Pirate Metrics (AARRR)', creator: 'Dave McClure', category: 'growth', description: 'Acquisition, Activation, Retention, Revenue, Referral', episodes: ['ep10'] },
-  { id: 'kano-model', name: 'Kano Model', creator: 'Noriaki Kano', category: 'prioritization', description: 'Categorizing features by customer satisfaction', episodes: ['ep11'] },
-  { id: 'design-thinking', name: 'Design Thinking', creator: 'IDEO', category: 'design', description: 'Human-centered approach to innovation', episodes: ['ep12'] },
-];
-
-const CATEGORY_LABELS: Record<FrameworkCategory, string> = {
+const CATEGORY_LABELS: Record<string, string> = {
   prioritization: 'Prioritization',
   strategy: 'Strategy',
   growth: 'Growth',
@@ -38,7 +26,7 @@ const CATEGORY_LABELS: Record<FrameworkCategory, string> = {
   ai_ml: 'AI/ML',
 };
 
-const CATEGORY_COLORS: Record<FrameworkCategory, string> = {
+const CATEGORY_COLORS: Record<string, string> = {
   prioritization: 'bg-purple-100 text-purple-700 border-purple-200',
   strategy: 'bg-blue-100 text-blue-700 border-blue-200',
   growth: 'bg-green-100 text-green-700 border-green-200',
@@ -50,33 +38,36 @@ const CATEGORY_COLORS: Record<FrameworkCategory, string> = {
 };
 
 export default function Frameworks() {
+  const { frameworks, isLoading, isReady, sync, status } = useDojoData();
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<FrameworkCategory | 'all'>('all');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
   
   const categories = useMemo(() => {
-    const cats = new Set(DEMO_FRAMEWORKS.map(f => f.category).filter(Boolean));
-    return Array.from(cats) as FrameworkCategory[];
-  }, []);
+    const cats = new Set(frameworks.map(f => f.category).filter(Boolean));
+    return Array.from(cats);
+  }, [frameworks]);
   
   const filteredFrameworks = useMemo(() => {
-    let frameworks = [...DEMO_FRAMEWORKS];
+    let list = [...frameworks];
     
     // Filter by search
     if (searchQuery) {
-      frameworks = frameworks.filter(f => 
-        f.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        f.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      list = list.filter(f => 
+        f.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        f.explanation?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         f.creator?.toLowerCase().includes(searchQuery.toLowerCase())
       );
     }
     
     // Filter by category
     if (selectedCategory !== 'all') {
-      frameworks = frameworks.filter(f => f.category === selectedCategory);
+      list = list.filter(f => f.category === selectedCategory);
     }
     
-    return frameworks;
-  }, [searchQuery, selectedCategory]);
+    return list;
+  }, [frameworks, searchQuery, selectedCategory]);
+  
+  const showEmptyState = !isLoading && frameworks.length === 0;
   
   return (
     <Layout>
@@ -89,9 +80,19 @@ export default function Frameworks() {
               Framework Library
             </h1>
             <p className="text-muted-foreground">
-              {DEMO_FRAMEWORKS.length}+ PM frameworks mentioned by podcast guests
+              {isReady 
+                ? `${frameworks.length} PM frameworks mentioned by podcast guests`
+                : 'Loading frameworks from podcasts...'
+              }
             </p>
           </div>
+          
+          {status !== 'syncing' && status !== 'processing' && (
+            <Button variant="outline" size="sm" onClick={sync} className="gap-2">
+              <RefreshCw className="h-4 w-4" />
+              Refresh Data
+            </Button>
+          )}
         </div>
         
         {/* Search and Category Filters */}
@@ -103,38 +104,70 @@ export default function Frameworks() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10"
+              disabled={!isReady}
             />
           </div>
           
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant={selectedCategory === 'all' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setSelectedCategory('all')}
-              className={cn(
-                selectedCategory === 'all' && 'bg-primary hover:bg-primary-hover'
-              )}
-            >
-              All
-            </Button>
-            {categories.map((cat) => (
+          {categories.length > 0 && (
+            <div className="flex flex-wrap gap-2">
               <Button
-                key={cat}
-                variant={selectedCategory === cat ? 'default' : 'outline'}
+                variant={selectedCategory === 'all' ? 'default' : 'outline'}
                 size="sm"
-                onClick={() => setSelectedCategory(cat)}
+                onClick={() => setSelectedCategory('all')}
                 className={cn(
-                  selectedCategory === cat && 'bg-primary hover:bg-primary-hover'
+                  selectedCategory === 'all' && 'bg-primary hover:bg-primary-hover'
                 )}
               >
-                {CATEGORY_LABELS[cat]}
+                All
               </Button>
-            ))}
-          </div>
+              {categories.map((cat) => (
+                <Button
+                  key={cat}
+                  variant={selectedCategory === cat ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setSelectedCategory(cat)}
+                  className={cn(
+                    selectedCategory === cat && 'bg-primary hover:bg-primary-hover'
+                  )}
+                >
+                  {CATEGORY_LABELS[cat] || cat}
+                </Button>
+              ))}
+            </div>
+          )}
         </div>
         
-        {/* Frameworks Grid */}
-        {filteredFrameworks.length === 0 ? (
+        {/* Loading State */}
+        {isLoading && (
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="p-5 rounded-xl border border-border bg-card">
+                <Skeleton className="h-6 w-20 rounded-full mb-3" />
+                <Skeleton className="h-6 w-3/4 mb-2" />
+                <Skeleton className="h-4 w-1/2 mb-2" />
+                <Skeleton className="h-12 w-full" />
+              </div>
+            ))}
+          </div>
+        )}
+        
+        {/* Empty State */}
+        {showEmptyState && (
+          <div className="text-center py-16">
+            <BookOpen className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+            <h3 className="text-lg font-semibold mb-2">No Frameworks Yet</h3>
+            <p className="text-muted-foreground mb-4">
+              Sync the podcast transcripts to extract framework intelligence.
+            </p>
+            <Button onClick={sync} className="gap-2">
+              <RefreshCw className="h-4 w-4" />
+              Start Sync
+            </Button>
+          </div>
+        )}
+        
+        {/* No Search Results */}
+        {isReady && (searchQuery || selectedCategory !== 'all') && filteredFrameworks.length === 0 && frameworks.length > 0 && (
           <div className="text-center py-16">
             <BookOpen className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
             <h3 className="text-lg font-semibold mb-2">No frameworks found</h3>
@@ -145,12 +178,15 @@ export default function Frameworks() {
               Show All Frameworks
             </Button>
           </div>
-        ) : (
+        )}
+        
+        {/* Frameworks Grid */}
+        {isReady && filteredFrameworks.length > 0 && (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredFrameworks.map((framework) => (
               <Link
-                key={framework.id}
-                to={`/frameworks/${framework.id}`}
+                key={framework.name}
+                to={`/frameworks/${encodeURIComponent(framework.name.toLowerCase().replace(/\s+/g, '-'))}`}
                 className="group"
               >
                 <div className="h-full p-5 rounded-xl border border-border bg-card card-hover flex flex-col">
@@ -158,14 +194,14 @@ export default function Frameworks() {
                     {framework.category && (
                       <span className={cn(
                         'interview-badge text-xs',
-                        CATEGORY_COLORS[framework.category]
+                        CATEGORY_COLORS[framework.category] || 'bg-muted text-muted-foreground'
                       )}>
-                        {CATEGORY_LABELS[framework.category]}
+                        {CATEGORY_LABELS[framework.category] || framework.category}
                       </span>
                     )}
                     <span className="flex items-center gap-1 text-xs text-muted-foreground">
                       <Podcast className="h-3 w-3" />
-                      {framework.episodes?.length || 0}
+                      {framework.mentioned_in?.length || 0}
                     </span>
                   </div>
                   
@@ -181,7 +217,7 @@ export default function Frameworks() {
                   )}
                   
                   <p className="text-sm text-muted-foreground flex-1 line-clamp-2">
-                    {framework.description}
+                    {framework.explanation}
                   </p>
                   
                   <div className="flex items-center justify-end pt-3 mt-3 border-t border-border">

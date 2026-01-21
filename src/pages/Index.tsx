@@ -11,21 +11,21 @@ import {
   TrendingUp,
   BookOpen
 } from 'lucide-react';
-import { useSyncStore } from '@/stores/syncStore';
+import { useDojoData } from '@/contexts/DojoDataContext';
 import { useProgressStore } from '@/stores/progressStore';
 
 export default function Index() {
-  const { syncMetadata } = useSyncStore();
+  const { episodes, companies, frameworks, totalEpisodes, isLoading } = useDojoData();
   const { getReadinessScore, getRecommendations, progress } = useProgressStore();
   
-  const episodeCount = syncMetadata?.total_episodes || 284;
+  const episodeCount = totalEpisodes || episodes.length || 284;
   const readinessScore = getReadinessScore();
   const recommendations = getRecommendations();
   
   const quickStats = [
-    { label: 'Episodes', value: episodeCount.toString(), icon: Sparkles },
-    { label: 'Companies', value: '120+', icon: Building2 },
-    { label: 'Frameworks', value: '50+', icon: BookOpen },
+    { label: 'Episodes', value: isLoading ? '...' : episodeCount.toString(), icon: Sparkles },
+    { label: 'Companies', value: isLoading ? '...' : `${companies.length || '120'}+`, icon: Building2 },
+    { label: 'Frameworks', value: isLoading ? '...' : `${frameworks.length || '50'}+`, icon: BookOpen },
   ];
   
   return (
