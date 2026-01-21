@@ -27,7 +27,7 @@ function authenticateServiceRole(req: Request): { authenticated: boolean; error?
 }
 
 const GITHUB_API_BASE = 'https://api.github.com/repos/nicoles/lennys-podcast-transcripts';
-const LOVABLE_AI_URL = 'https://ai.gateway.lovable.dev/v1/chat/completions';
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
 
 async function fetchEpisodeList(): Promise<string[]> {
   const response = await fetch(`${GITHUB_API_BASE}/contents/transcripts`, {
@@ -140,19 +140,23 @@ ${truncatedTranscript}
 
 Return ONLY valid JSON matching the schema. Extract real companies, frameworks, and quotes from the transcript.`;
 
-  const response = await fetch(LOVABLE_AI_URL, {
+  const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'google/gemini-3-flash-preview',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
+      contents: [
+        {
+          parts: [
+            { text: `${systemPrompt}\n\n${userPrompt}` }
+          ]
+        }
       ],
-      temperature: 0.3,
+      generationConfig: {
+        temperature: 0.3,
+        maxOutputTokens: 8192,
+      },
     }),
   });
 
@@ -161,14 +165,16 @@ Return ONLY valid JSON matching the schema. Extract real companies, frameworks, 
     if (status === 429) {
       throw new Error('RATE_LIMITED');
     }
-    if (status === 402) {
-      throw new Error('PAYMENT_REQUIRED');
+    if (status === 402 || status === 403) {
+      throw new Error('API_KEY_ERROR');
     }
-    throw new Error(`AI API error: ${status}`);
+    const errorText = await response.text();
+    console.error('Gemini API error:', status, errorText);
+    throw new Error(`Gemini API error: ${status}`);
   }
 
   const data = await response.json();
-  const content = data.choices?.[0]?.message?.content || '';
+  const content = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
   
   // Parse JSON from response
   const jsonMatch = content.match(/\{[\s\S]*\}/);
@@ -206,11 +212,11 @@ serve(async (req) => {
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
+    const geminiApiKey = Deno.env.get('GOOGLE_GEMINI_API_KEY');
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    if (!lovableApiKey) {
-      throw new Error('LOVABLE_API_KEY not configured');
+    if (!geminiApiKey) {
+      throw new Error('GOOGLE_GEMINI_API_KEY not configured');
     }
 
     console.log('Checking GitHub for new episodes...');
@@ -263,13 +269,13 @@ serve(async (req) => {
           continue;
         }
 
-        // Extract intelligence using AI
+        // Extract intelligence using Google Gemini
         const intelligence = await extractIntelligenceWithAI(
           content.transcript,
           episodeId,
           content.guest,
           content.title,
-          lovableApiKey
+          geminiApiKey
         );
 
         // Store in cache
@@ -295,7 +301,7 @@ serve(async (req) => {
 
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        if (msg === 'RATE_LIMITED' || msg === 'PAYMENT_REQUIRED') {
+        if (msg === 'RATE_LIMITED' || msg === 'API_KEY_ERROR') {
           console.log(`Stopping due to: ${msg}`);
           errors.push(`Stopped: ${msg}`);
           break;
@@ -308,7 +314,7 @@ serve(async (req) => {
 
     return new Response(
       JSON.stringify({
-        message: `Synced ${processed} new episodes with real AI extraction`,
+        message: `Synced ${processed} new episodes with Google Gemini`,
         total: allEpisodeIds.length,
         cached: cachedIds.size,
         newFound: newEpisodeIds.length,
