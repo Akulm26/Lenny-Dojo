@@ -7,11 +7,46 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Validation constants
+const MAX_TRANSCRIPT_LENGTH = 60000;
+const MAX_STRING_LENGTH = 500;
+
 interface ExtractRequest {
   transcript: string;
   episodeId: string;
   guestName: string;
   episodeTitle: string;
+}
+
+// Validate and sanitize string input
+function validateString(value: unknown, fieldName: string, maxLength: number): string {
+  if (typeof value !== 'string') {
+    throw new Error(`${fieldName} must be a string`);
+  }
+  if (value.length === 0) {
+    throw new Error(`${fieldName} cannot be empty`);
+  }
+  if (value.length > maxLength) {
+    throw new Error(`${fieldName} exceeds maximum length of ${maxLength}`);
+  }
+  // Basic sanitization - remove control characters except newlines/tabs
+  return value.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+}
+
+// Validate request body
+function validateRequest(body: unknown): ExtractRequest {
+  if (!body || typeof body !== 'object') {
+    throw new Error('Request body must be a valid JSON object');
+  }
+
+  const obj = body as Record<string, unknown>;
+
+  return {
+    transcript: validateString(obj.transcript, 'transcript', MAX_TRANSCRIPT_LENGTH),
+    episodeId: validateString(obj.episodeId, 'episodeId', MAX_STRING_LENGTH),
+    guestName: validateString(obj.guestName, 'guestName', MAX_STRING_LENGTH),
+    episodeTitle: validateString(obj.episodeTitle, 'episodeTitle', MAX_STRING_LENGTH),
+  };
 }
 
 serve(async (req) => {
@@ -24,11 +59,30 @@ serve(async (req) => {
       throw new Error('LOVABLE_API_KEY is not configured');
     }
 
-    const body: ExtractRequest = await req.json();
+    // Parse and validate request
+    let rawBody: unknown;
+    try {
+      rawBody = await req.json();
+    } catch {
+      return new Response(
+        JSON.stringify({ error: 'Invalid JSON in request body' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
-    // Truncate very long transcripts
-    const transcript = body.transcript.length > 60000 
-      ? body.transcript.substring(0, 60000) + '\n\n[Transcript truncated for processing]' 
+    let body: ExtractRequest;
+    try {
+      body = validateRequest(rawBody);
+    } catch (validationError) {
+      return new Response(
+        JSON.stringify({ error: validationError instanceof Error ? validationError.message : 'Validation failed' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Truncate very long transcripts (already validated, but apply soft limit for AI)
+    const transcript = body.transcript.length > MAX_TRANSCRIPT_LENGTH 
+      ? body.transcript.substring(0, MAX_TRANSCRIPT_LENGTH) + '\n\n[Transcript truncated for processing]' 
       : body.transcript;
 
     const systemPrompt = `You are analyzing a Lenny's Podcast transcript to extract structured intelligence.
