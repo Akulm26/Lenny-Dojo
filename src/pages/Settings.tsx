@@ -10,7 +10,8 @@ import {
   ExternalLink,
   Check,
   Database,
-  Loader2
+  Loader2,
+  Zap
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import {
@@ -26,10 +27,14 @@ import {
 } from "@/components/ui/alert-dialog";
 import { seedIntelligenceCache, getCacheStatus } from '@/services/seedCache';
 import { Progress } from '@/components/ui/progress';
+import { useDojoData } from '@/contexts/DojoDataContext';
+import { clearAllCache } from '@/services/github';
+import { clearIntelligenceCache } from '@/services/intelligenceCache';
 
 export default function Settings() {
   const { syncMetadata, isSyncing, setIsSyncing } = useSyncStore();
   const { progress, clearProgress } = useProgressStore();
+  const { sync, status, progressMessage } = useDojoData();
   const [syncResult, setSyncResult] = useState<string | null>(null);
   
   // Cache seeding state
@@ -37,11 +42,19 @@ export default function Settings() {
   const [isSeeding, setIsSeeding] = useState(false);
   const [seedProgress, setSeedProgress] = useState({ current: 0, total: 0, message: '' });
   const [seedResult, setSeedResult] = useState<string | null>(null);
+  const [isForceExtracting, setIsForceExtracting] = useState(false);
   
   // Load cache status on mount
   useEffect(() => {
     getCacheStatus().then(status => setCacheCount(status.cached));
   }, []);
+  
+  // Refresh cache count when sync completes
+  useEffect(() => {
+    if (status === 'complete') {
+      getCacheStatus().then(s => setCacheCount(s.cached));
+    }
+  }, [status]);
   
   const handleSeedCache = async () => {
     setIsSeeding(true);
@@ -64,17 +77,30 @@ export default function Settings() {
     }
   };
   
-  const handleCheckUpdates = async () => {
-    setIsSyncing(true);
+  const handleForceExtract = async () => {
+    setIsForceExtracting(true);
     setSyncResult(null);
     
-    // Simulate sync check
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    setIsSyncing(false);
-    setSyncResult('Already up to date');
-    
-    setTimeout(() => setSyncResult(null), 3000);
+    try {
+      // Clear all caches
+      await clearIntelligenceCache();
+      clearAllCache();
+      setCacheCount(0);
+      
+      // Trigger full sync with AI extraction
+      sync();
+      setSyncResult('Extraction started!');
+    } catch (error) {
+      console.error('Force extract error:', error);
+      setSyncResult('Error: ' + (error instanceof Error ? error.message : 'Unknown'));
+    } finally {
+      setIsForceExtracting(false);
+    }
+  };
+  
+  const handleCheckUpdates = async () => {
+    // Just trigger sync directly
+    sync();
   };
   
   const handleExportProgress = () => {
@@ -178,21 +204,26 @@ export default function Settings() {
                 <span>{syncMetadata?.latest_episode_date || 'N/A'}</span>
               </div>
               
-              <div className="pt-2">
+              {/* Show sync status message */}
+              {(status === 'syncing' || status === 'processing' || status === 'checking') && (
+                <div className="p-3 rounded-lg bg-primary/10 text-sm">
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                    <span>{progressMessage || 'Syncing...'}</span>
+                  </div>
+                </div>
+              )}
+              
+              <div className="flex gap-2 pt-2">
                 <Button
                   onClick={handleCheckUpdates}
-                  disabled={isSyncing}
+                  disabled={status === 'syncing' || status === 'processing' || isForceExtracting}
                   className="gap-2"
                 >
-                  {isSyncing ? (
+                  {status === 'syncing' || status === 'processing' ? (
                     <>
                       <RefreshCw className="h-4 w-4 animate-spin" />
-                      Checking...
-                    </>
-                  ) : syncResult ? (
-                    <>
-                      <Check className="h-4 w-4" />
-                      {syncResult}
+                      Syncing...
                     </>
                   ) : (
                     <>
@@ -201,6 +232,34 @@ export default function Settings() {
                     </>
                   )}
                 </Button>
+                
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="outline"
+                      disabled={status === 'syncing' || status === 'processing' || isForceExtracting}
+                      className="gap-2"
+                    >
+                      <Zap className="h-4 w-4" />
+                      Force AI Extraction
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Force AI Extraction?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This will clear all cached intelligence and re-extract from all 303 episodes using real AI. 
+                        This requires Lovable AI credits and will take several minutes.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction onClick={handleForceExtract}>
+                        Start Extraction
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               </div>
             </div>
           </section>
