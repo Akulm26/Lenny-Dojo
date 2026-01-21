@@ -1,4 +1,5 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
 
@@ -6,6 +7,31 @@ const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+// Authentication helper
+async function authenticateRequest(req: Request): Promise<{ authenticated: boolean; error?: string }> {
+  const authHeader = req.headers.get('Authorization');
+  
+  if (!authHeader?.startsWith('Bearer ')) {
+    return { authenticated: false, error: 'Missing or invalid Authorization header' };
+  }
+
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+  
+  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    global: { headers: { Authorization: authHeader } }
+  });
+
+  const token = authHeader.replace('Bearer ', '');
+  const { data, error } = await supabase.auth.getUser(token);
+  
+  if (error || !data?.user) {
+    return { authenticated: false, error: 'Invalid or expired token' };
+  }
+
+  return { authenticated: true };
+}
 
 // Validation constants
 const MAX_STRING_LENGTH = 5000;
@@ -113,6 +139,15 @@ serve(async (req) => {
   }
 
   try {
+    // Authenticate request
+    const auth = await authenticateRequest(req);
+    if (!auth.authenticated) {
+      return new Response(
+        JSON.stringify({ error: auth.error || 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     if (!LOVABLE_API_KEY) {
       throw new Error('LOVABLE_API_KEY is not configured');
     }
