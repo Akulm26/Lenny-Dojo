@@ -12,6 +12,7 @@ import Evaluation from "./pages/Evaluation";
 import Companies from "./pages/Companies";
 import CompanyDetail from "./pages/CompanyDetail";
 import Frameworks from "./pages/Frameworks";
+import FrameworkDetail from "./pages/FrameworkDetail";
 import Progress from "./pages/Progress";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
@@ -33,6 +34,7 @@ const App = () => (
             <Route path="/companies" element={<Companies />} />
             <Route path="/companies/:slug" element={<CompanyDetail />} />
             <Route path="/frameworks" element={<Frameworks />} />
+            <Route path="/frameworks/:slug" element={<FrameworkDetail />} />
             <Route path="/progress" element={<Progress />} />
             <Route path="/settings" element={<Settings />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
