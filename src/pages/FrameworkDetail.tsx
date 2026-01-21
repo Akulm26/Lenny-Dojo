@@ -168,12 +168,14 @@ export default function FrameworkDetail() {
         
         {/* Category Badge */}
         {framework.category && (
-          <span className={cn(
-            'inline-flex items-center px-3 py-1 rounded-full text-sm font-medium mb-4',
-            CATEGORY_COLORS[framework.category] || 'bg-muted text-muted-foreground'
-          )}>
-            {CATEGORY_LABELS[framework.category] || framework.category}
-          </span>
+          <div className="flex justify-end mb-4">
+            <span className={cn(
+              'inline-flex items-center px-3 py-1 rounded-full text-sm font-medium',
+              CATEGORY_COLORS[framework.category] || 'bg-muted text-muted-foreground'
+            )}>
+              {CATEGORY_LABELS[framework.category] || framework.category}
+            </span>
+          </div>
         )}
         
         {/* Header */}
