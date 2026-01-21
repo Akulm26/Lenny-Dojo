@@ -1,0 +1,197 @@
+import { useState, useEffect, useCallback } from 'react';
+import {
+  fetchEpisodeList,
+  fetchAndParseEpisode,
+  checkForUpdates,
+  getSyncStatus,
+  updateSyncStatus,
+  getStoredEpisodes,
+  storeEpisodes,
+  Episode,
+  SyncStatus,
+  storeCompanies,
+  storeFrameworks,
+  getStoredCompanies,
+  getStoredFrameworks
+} from '@/services/github';
+import { extractAllIntelligence, CompanyIntelligence, Framework } from '@/services/intelligence';
+
+interface DojoSyncState {
+  status: 'idle' | 'checking' | 'syncing' | 'processing' | 'complete' | 'error';
+  progress: number;
+  progressMessage: string;
+  error: string | null;
+  episodes: Episode[];
+  companies: CompanyIntelligence[];
+  frameworks: Framework[];
+  totalEpisodes: number;
+  lastSyncDate: string | null;
+  latestTranscriptDate: string | null;
+}
+
+export function useDojoSync() {
+  const [state, setState] = useState<DojoSyncState>({
+    status: 'idle',
+    progress: 0,
+    progressMessage: '',
+    error: null,
+    episodes: [],
+    companies: [],
+    frameworks: [],
+    totalEpisodes: 0,
+    lastSyncDate: null,
+    latestTranscriptDate: null
+  });
+
+  // Load cached data on mount
+  useEffect(() => {
+    const syncStatus = getSyncStatus();
+    const episodes = getStoredEpisodes();
+    const companies = getStoredCompanies<CompanyIntelligence>();
+    const frameworks = getStoredFrameworks<Framework>();
+
+    setState(prev => ({
+      ...prev,
+      episodes,
+      companies,
+      frameworks,
+      totalEpisodes: episodes.length,
+      lastSyncDate: syncStatus.last_sync,
+      latestTranscriptDate: syncStatus.latest_episode_date,
+      status: episodes.length > 0 ? 'complete' : 'idle'
+    }));
+  }, []);
+
+  const performFullSync = useCallback(async () => {
+    try {
+      setState(prev => ({
+        ...prev,
+        status: 'syncing',
+        progress: 0,
+        progressMessage: 'Fetching episode list...',
+        error: null
+      }));
+
+      const episodeIds = await fetchEpisodeList();
+      const total = episodeIds.length;
+
+      setState(prev => ({
+        ...prev,
+        totalEpisodes: total,
+        progress: 5,
+        progressMessage: `Found ${total} episodes. Loading transcripts...`
+      }));
+
+      const episodes: Episode[] = [];
+      const batchSize = 10;
+
+      for (let i = 0; i < episodeIds.length; i += batchSize) {
+        const batch = episodeIds.slice(i, i + batchSize);
+        const batchResults = await Promise.allSettled(
+          batch.map(id => fetchAndParseEpisode(id))
+        );
+
+        batchResults.forEach((result, idx) => {
+          if (result.status === 'fulfilled') {
+            episodes.push(result.value);
+          } else {
+            console.warn(`Failed to fetch ${batch[idx]}:`, result.reason);
+          }
+        });
+
+        const progress = Math.round(((i + batch.length) / total) * 70) + 5;
+        setState(prev => ({
+          ...prev,
+          progress,
+          progressMessage: `Loading transcripts... ${episodes.length}/${total}`
+        }));
+
+        if (i + batchSize < episodeIds.length) {
+          await new Promise(r => setTimeout(r, 100));
+        }
+      }
+
+      storeEpisodes(episodes);
+      setState(prev => ({ ...prev, episodes }));
+
+      setState(prev => ({
+        ...prev,
+        status: 'processing',
+        progress: 75,
+        progressMessage: 'Extracting company intelligence...'
+      }));
+
+      const { companies, frameworks } = await extractAllIntelligence(episodes, (current, total, message) => {
+        const progress = 75 + Math.round((current / total) * 20);
+        setState(prev => ({ ...prev, progress, progressMessage: message }));
+      });
+
+      storeCompanies(companies);
+      storeFrameworks(frameworks);
+
+      const { sha, date } = await checkForUpdates();
+
+      updateSyncStatus({
+        status: 'complete',
+        last_sync: new Date().toISOString(),
+        last_commit_sha: sha,
+        total_episodes: episodes.length,
+        latest_episode_date: date,
+        error_message: null
+      });
+
+      setState(prev => ({
+        ...prev,
+        status: 'complete',
+        progress: 100,
+        progressMessage: `Synced ${episodes.length} episodes`,
+        episodes,
+        companies,
+        frameworks,
+        lastSyncDate: new Date().toISOString(),
+        latestTranscriptDate: date
+      }));
+
+    } catch (error) {
+      console.error('Full sync failed:', error);
+      setState(prev => ({
+        ...prev,
+        status: 'error',
+        error: error instanceof Error ? error.message : 'Sync failed'
+      }));
+    }
+  }, []);
+
+  const checkAndSyncIfNeeded = useCallback(async () => {
+    try {
+      setState(prev => ({ ...prev, status: 'checking', progressMessage: 'Checking for new episodes...' }));
+      const { hasUpdates } = await checkForUpdates();
+
+      if (hasUpdates) {
+        setState(prev => ({ ...prev, progressMessage: 'New episodes found! Syncing...' }));
+        await performFullSync();
+      } else {
+        setState(prev => ({ ...prev, status: 'complete', progressMessage: 'Already up to date' }));
+      }
+    } catch (error) {
+      console.error('Sync check failed:', error);
+      setState(prev => ({
+        ...prev,
+        status: 'error',
+        error: error instanceof Error ? error.message : 'Failed to check for updates'
+      }));
+    }
+  }, [performFullSync]);
+
+  const manualSync = useCallback(() => {
+    performFullSync();
+  }, [performFullSync]);
+
+  return {
+    ...state,
+    sync: manualSync,
+    checkAndSync: checkAndSyncIfNeeded,
+    isLoading: ['checking', 'syncing', 'processing'].includes(state.status),
+    isReady: state.status === 'complete' && state.episodes.length > 0
+  };
+}
