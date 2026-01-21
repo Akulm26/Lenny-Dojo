@@ -146,12 +146,15 @@ export default function Settings() {
           <section className="p-6 rounded-xl border border-border bg-card">
             <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
               <Database className="h-5 w-5 text-primary" />
-              Intelligence Cache
+              AI Intelligence Extraction
             </h2>
             
             <p className="text-sm text-muted-foreground mb-4">
-              Pre-populate the cache with demo intelligence data for all episodes. 
-              This enables the Companies and Frameworks pages to work without AI extraction.
+              Extract real intelligence from podcast transcripts using AI. 
+              This fetches transcripts from GitHub and uses AI to analyze each episode.
+              <strong className="block mt-2 text-warning">
+                ⚠️ This processes ~5 episodes at a time and may take several minutes for all episodes.
+              </strong>
             </p>
             
             <div className="space-y-4">
@@ -187,7 +190,7 @@ export default function Settings() {
                   ) : (
                     <>
                       <Database className="h-4 w-4" />
-                      {cacheCount > 0 ? 'Re-seed Cache' : 'Seed Intelligence Cache'}
+                      {cacheCount > 0 ? 'Re-extract with AI' : 'Extract Intelligence (AI)'}
                     </>
                   )}
                 </Button>
