@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.seed-intelligence-cache]
 verify_jwt = false
+
+[functions.sync-new-episodes]
+verify_jwt = false
