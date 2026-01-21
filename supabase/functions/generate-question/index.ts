@@ -7,6 +7,14 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Validation constants
+const MAX_STRING_LENGTH = 5000;
+const MAX_CONTEXT_LENGTH = 10000;
+const MAX_ARRAY_LENGTH = 50;
+
+const VALID_INTERVIEW_TYPES = ['behavioral', 'product_sense', 'product_design', 'rca', 'guesstimate', 'tech', 'ai_ml', 'strategy', 'metrics'];
+const VALID_DIFFICULTIES = ['medium', 'hard', 'expert'];
+
 interface GenerateRequest {
   interviewType: 'behavioral' | 'product_sense' | 'product_design' | 'rca' | 'guesstimate' | 'tech' | 'ai_ml' | 'strategy' | 'metrics';
   difficulty: 'medium' | 'hard' | 'expert';
@@ -16,6 +24,67 @@ interface GenerateRequest {
   quotes: string[];
   guestName: string;
   episodeTitle: string;
+}
+
+// Validate and sanitize string input
+function validateString(value: unknown, fieldName: string, maxLength: number): string {
+  if (typeof value !== 'string') {
+    throw new Error(`${fieldName} must be a string`);
+  }
+  if (value.length > maxLength) {
+    throw new Error(`${fieldName} exceeds maximum length of ${maxLength}`);
+  }
+  // Basic sanitization - remove control characters except newlines/tabs
+  return value.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+}
+
+// Validate string array
+function validateStringArray(value: unknown, fieldName: string, maxLength: number, maxItemLength: number): string[] {
+  if (!Array.isArray(value)) {
+    throw new Error(`${fieldName} must be an array`);
+  }
+  if (value.length > maxLength) {
+    throw new Error(`${fieldName} exceeds maximum length of ${maxLength} items`);
+  }
+  return value.map((item, i) => {
+    if (typeof item !== 'string') {
+      throw new Error(`${fieldName}[${i}] must be a string`);
+    }
+    if (item.length > maxItemLength) {
+      return item.substring(0, maxItemLength);
+    }
+    return item.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+  });
+}
+
+// Validate request body
+function validateRequest(body: unknown): GenerateRequest {
+  if (!body || typeof body !== 'object') {
+    throw new Error('Request body must be a valid JSON object');
+  }
+
+  const obj = body as Record<string, unknown>;
+
+  // Validate interview type
+  if (!VALID_INTERVIEW_TYPES.includes(obj.interviewType as string)) {
+    throw new Error(`interviewType must be one of: ${VALID_INTERVIEW_TYPES.join(', ')}`);
+  }
+
+  // Validate difficulty
+  if (!VALID_DIFFICULTIES.includes(obj.difficulty as string)) {
+    throw new Error(`difficulty must be one of: ${VALID_DIFFICULTIES.join(', ')}`);
+  }
+
+  return {
+    interviewType: obj.interviewType as GenerateRequest['interviewType'],
+    difficulty: obj.difficulty as GenerateRequest['difficulty'],
+    companyName: validateString(obj.companyName, 'companyName', MAX_STRING_LENGTH),
+    companyContext: validateString(obj.companyContext, 'companyContext', MAX_CONTEXT_LENGTH),
+    decisions: validateStringArray(obj.decisions, 'decisions', MAX_ARRAY_LENGTH, MAX_STRING_LENGTH),
+    quotes: validateStringArray(obj.quotes, 'quotes', MAX_ARRAY_LENGTH, MAX_STRING_LENGTH),
+    guestName: validateString(obj.guestName, 'guestName', MAX_STRING_LENGTH),
+    episodeTitle: validateString(obj.episodeTitle, 'episodeTitle', MAX_STRING_LENGTH),
+  };
 }
 
 const INTERVIEW_TYPE_PROMPTS: Record<string, string> = {
@@ -48,7 +117,27 @@ serve(async (req) => {
       throw new Error('LOVABLE_API_KEY is not configured');
     }
 
-    const body: GenerateRequest = await req.json();
+    // Parse and validate request
+    let rawBody: unknown;
+    try {
+      rawBody = await req.json();
+    } catch {
+      return new Response(
+        JSON.stringify({ error: 'Invalid JSON in request body' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    let body: GenerateRequest;
+    try {
+      body = validateRequest(rawBody);
+    } catch (validationError) {
+      return new Response(
+        JSON.stringify({ error: validationError instanceof Error ? validationError.message : 'Validation failed' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     const { interviewType, difficulty, companyName, companyContext, decisions, quotes, guestName, episodeTitle } = body;
 
     const systemPrompt = `You are an expert PM interview coach for Lenny's Dojo.

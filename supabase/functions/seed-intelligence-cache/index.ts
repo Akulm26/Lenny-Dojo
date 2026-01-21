@@ -6,6 +6,67 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Validation constants
+const MAX_EPISODES = 500;
+const MAX_STRING_LENGTH = 500;
+
+interface EpisodeInput {
+  id: string;
+  guest: string;
+  title: string;
+}
+
+// Validate and sanitize string input
+function validateString(value: unknown, fieldName: string, maxLength: number): string {
+  if (typeof value !== 'string') {
+    throw new Error(`${fieldName} must be a string`);
+  }
+  if (value.length > maxLength) {
+    return value.substring(0, maxLength);
+  }
+  // Basic sanitization - remove control characters
+  return value.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+}
+
+// Validate episode object
+function validateEpisode(value: unknown, index: number): EpisodeInput {
+  if (!value || typeof value !== 'object') {
+    throw new Error(`episodes[${index}] must be an object`);
+  }
+
+  const obj = value as Record<string, unknown>;
+
+  return {
+    id: validateString(obj.id, `episodes[${index}].id`, MAX_STRING_LENGTH),
+    guest: validateString(obj.guest, `episodes[${index}].guest`, MAX_STRING_LENGTH),
+    title: validateString(obj.title, `episodes[${index}].title`, MAX_STRING_LENGTH),
+  };
+}
+
+// Validate request body
+function validateRequest(body: unknown): EpisodeInput[] {
+  if (!body || typeof body !== 'object') {
+    throw new Error('Request body must be a valid JSON object');
+  }
+
+  const obj = body as Record<string, unknown>;
+  const episodes = obj.episodes;
+
+  if (!Array.isArray(episodes)) {
+    throw new Error('episodes must be an array');
+  }
+
+  if (episodes.length === 0) {
+    throw new Error('episodes array cannot be empty');
+  }
+
+  if (episodes.length > MAX_EPISODES) {
+    throw new Error(`episodes array exceeds maximum length of ${MAX_EPISODES}`);
+  }
+
+  return episodes.map((ep, i) => validateEpisode(ep, i));
+}
+
 // Generate realistic demo intelligence for an episode based on its metadata
 function generateDemoIntelligence(episodeId: string, guestName: string, episodeTitle: string) {
   // Parse guest name to create more realistic data
@@ -199,13 +260,23 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Get request body with episode list
-    const body = await req.json();
-    const episodes: Array<{ id: string; guest: string; title: string }> = body.episodes || [];
-
-    if (!episodes.length) {
+    // Parse and validate request
+    let rawBody: unknown;
+    try {
+      rawBody = await req.json();
+    } catch {
       return new Response(
-        JSON.stringify({ error: "No episodes provided" }),
+        JSON.stringify({ error: 'Invalid JSON in request body' }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    let episodes: EpisodeInput[];
+    try {
+      episodes = validateRequest(rawBody);
+    } catch (validationError) {
+      return new Response(
+        JSON.stringify({ error: validationError instanceof Error ? validationError.message : 'Validation failed' }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }

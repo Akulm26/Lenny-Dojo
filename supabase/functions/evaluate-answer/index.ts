@@ -7,20 +7,94 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Validation constants
+const MAX_STRING_LENGTH = 2000;
+const MAX_ANSWER_LENGTH = 15000;
+const MAX_ARRAY_LENGTH = 20;
+
+interface ModelAnswer {
+  what_happened: string;
+  key_reasoning: string;
+  key_quote: string;
+  frameworks_mentioned: string[];
+  full_answer: string;
+}
+
 interface EvaluateRequest {
   question: string;
   situationBrief: string;
   userAnswer: string;
-  modelAnswer: {
-    what_happened: string;
-    key_reasoning: string;
-    key_quote: string;
-    frameworks_mentioned: string[];
-    full_answer: string;
-  };
+  modelAnswer: ModelAnswer;
   interviewType: string;
   guestName: string;
   episodeTitle: string;
+}
+
+// Validate and sanitize string input
+function validateString(value: unknown, fieldName: string, maxLength: number): string {
+  if (typeof value !== 'string') {
+    throw new Error(`${fieldName} must be a string`);
+  }
+  if (value.length > maxLength) {
+    throw new Error(`${fieldName} exceeds maximum length of ${maxLength}`);
+  }
+  // Basic sanitization - remove control characters except newlines/tabs
+  return value.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+}
+
+// Validate string array
+function validateStringArray(value: unknown, fieldName: string, maxLength: number, maxItemLength: number): string[] {
+  if (!Array.isArray(value)) {
+    return []; // Allow missing arrays
+  }
+  if (value.length > maxLength) {
+    throw new Error(`${fieldName} exceeds maximum length of ${maxLength} items`);
+  }
+  return value.map((item, i) => {
+    if (typeof item !== 'string') {
+      return '';
+    }
+    if (item.length > maxItemLength) {
+      return item.substring(0, maxItemLength);
+    }
+    return item.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+  }).filter(Boolean);
+}
+
+// Validate model answer object
+function validateModelAnswer(value: unknown): ModelAnswer {
+  if (!value || typeof value !== 'object') {
+    throw new Error('modelAnswer must be an object');
+  }
+
+  const obj = value as Record<string, unknown>;
+
+  return {
+    what_happened: validateString(obj.what_happened || '', 'modelAnswer.what_happened', MAX_STRING_LENGTH),
+    key_reasoning: validateString(obj.key_reasoning || '', 'modelAnswer.key_reasoning', MAX_STRING_LENGTH),
+    key_quote: validateString(obj.key_quote || '', 'modelAnswer.key_quote', MAX_STRING_LENGTH),
+    frameworks_mentioned: validateStringArray(obj.frameworks_mentioned, 'modelAnswer.frameworks_mentioned', MAX_ARRAY_LENGTH, 200),
+    full_answer: validateString(obj.full_answer || '', 'modelAnswer.full_answer', MAX_ANSWER_LENGTH),
+  };
+}
+
+// Validate request body
+function validateRequest(body: unknown): EvaluateRequest {
+  if (!body || typeof body !== 'object') {
+    throw new Error('Request body must be a valid JSON object');
+  }
+
+  const obj = body as Record<string, unknown>;
+
+  return {
+    question: validateString(obj.question, 'question', MAX_STRING_LENGTH),
+    situationBrief: validateString(obj.situationBrief, 'situationBrief', MAX_STRING_LENGTH),
+    userAnswer: validateString(obj.userAnswer, 'userAnswer', MAX_ANSWER_LENGTH),
+    modelAnswer: validateModelAnswer(obj.modelAnswer),
+    interviewType: validateString(obj.interviewType, 'interviewType', 50),
+    guestName: validateString(obj.guestName, 'guestName', 200),
+    episodeTitle: validateString(obj.episodeTitle, 'episodeTitle', 500),
+  };
 }
 
 serve(async (req) => {
@@ -33,7 +107,26 @@ serve(async (req) => {
       throw new Error('LOVABLE_API_KEY is not configured');
     }
 
-    const body: EvaluateRequest = await req.json();
+    // Parse and validate request
+    let rawBody: unknown;
+    try {
+      rawBody = await req.json();
+    } catch {
+      return new Response(
+        JSON.stringify({ error: 'Invalid JSON in request body' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    let body: EvaluateRequest;
+    try {
+      body = validateRequest(rawBody);
+    } catch (validationError) {
+      return new Response(
+        JSON.stringify({ error: validationError instanceof Error ? validationError.message : 'Validation failed' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     const systemPrompt = `You are a supportive but honest PM interview coach at Lenny's Dojo.
 
