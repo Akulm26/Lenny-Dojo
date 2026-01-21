@@ -8,8 +8,11 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Service role authentication - only allow internal/admin access
-function authenticateServiceRole(req: Request): { authenticated: boolean; error?: string } {
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
+const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY');
+
+// Authentication - accepts service role OR authenticated user JWT
+async function authenticateRequest(req: Request): Promise<{ authenticated: boolean; error?: string }> {
   const authHeader = req.headers.get('Authorization');
   
   if (!authHeader?.startsWith('Bearer ')) {
@@ -18,12 +21,27 @@ function authenticateServiceRole(req: Request): { authenticated: boolean; error?
 
   const token = authHeader.replace('Bearer ', '');
   
-  // Check if it's the service role key
+  // Option 1: Service role key (for internal calls)
   if (token === SUPABASE_SERVICE_ROLE_KEY) {
     return { authenticated: true };
   }
 
-  return { authenticated: false, error: 'Unauthorized - service role required' };
+  // Option 2: Validate user JWT token
+  try {
+    const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
+    const supabase = createClient(SUPABASE_URL!, SUPABASE_ANON_KEY!, {
+      global: { headers: { Authorization: authHeader } }
+    });
+    
+    const { data, error } = await supabase.auth.getUser();
+    if (error || !data?.user) {
+      return { authenticated: false, error: 'Invalid or expired token' };
+    }
+    
+    return { authenticated: true };
+  } catch {
+    return { authenticated: false, error: 'Token validation failed' };
+  }
 }
 
 // Validation constants
@@ -276,8 +294,8 @@ serve(async (req) => {
   }
 
   try {
-    // Authenticate - require service role for admin operations
-    const auth = authenticateServiceRole(req);
+    // Authenticate - accepts service role OR authenticated user JWT
+    const auth = await authenticateRequest(req);
     if (!auth.authenticated) {
       return new Response(
         JSON.stringify({ error: auth.error || 'Unauthorized' }),
