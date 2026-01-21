@@ -36,7 +36,9 @@ export function DojoDataProvider({ children }: { children: ReactNode }) {
       // Load from cache first, then check for updates
       dojoSync.checkAndSync();
     }
-  }, [dojoSync]);
+    // IMPORTANT: do NOT depend on the entire dojoSync object here (it changes every render)
+    // or we'll trigger repeated sync attempts and keep the UI in a loading state.
+  }, [dojoSync.status, dojoSync.episodes.length, dojoSync.checkAndSync]);
 
   return (
     <DojoDataContext.Provider value={dojoSync}>

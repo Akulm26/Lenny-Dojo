@@ -38,7 +38,7 @@ const CATEGORY_COLORS: Record<string, string> = {
 };
 
 export default function Frameworks() {
-  const { frameworks, isLoading, isReady, sync, status } = useDojoData();
+  const { frameworks, isLoading, isReady, sync, status, progressMessage } = useDojoData();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   
@@ -80,10 +80,9 @@ export default function Frameworks() {
               Framework Library
             </h1>
             <p className="text-muted-foreground">
-              {isReady 
+              {isReady
                 ? `${frameworks.length} PM frameworks mentioned by podcast guests`
-                : 'Loading frameworks from podcasts...'
-              }
+                : (progressMessage || 'Loading frameworks from podcasts...')}
             </p>
           </div>
           

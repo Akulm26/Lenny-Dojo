@@ -1,15 +1,10 @@
 import { RefreshCw, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useContext } from 'react';
 import { cn } from '@/lib/utils';
-
-// Import context directly to handle case where provider isn't ready
-import React from 'react';
-import { useDojoSync } from '@/hooks/useDojoSync';
+import { useDojoData } from '@/contexts/DojoDataContext';
 
 export function SyncStatusBar() {
-  // Use the hook directly to avoid provider dependency issues during HMR
-  const { status, progress, progressMessage, error, totalEpisodes, sync, isLoading } = useDojoSync();
+  const { status, progress, progressMessage, error, totalEpisodes, sync, isLoading } = useDojoData();
   
   if (status === 'complete' && !error) {
     return null; // Don't show when everything is fine
