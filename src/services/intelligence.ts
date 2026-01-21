@@ -1,6 +1,6 @@
-import { extractIntelligence, ExtractedIntelligence } from './ai';
+import { ExtractedIntelligence } from './ai';
 import { Episode } from './github';
-import { getCachedIntelligence, cacheIntelligence } from './intelligenceCache';
+import { getCachedIntelligence } from './intelligenceCache';
 
 // ============================================
 // TYPES
@@ -162,9 +162,14 @@ function aggregateIntelligence(
 }
 
 // ============================================
-// EXTRACTION & AGGREGATION
+// EXTRACTION & AGGREGATION (CACHE ONLY - NO AI CALLS)
 // ============================================
 
+/**
+ * Load intelligence from the Supabase cache and aggregate into companies/frameworks.
+ * This function NEVER calls AI extraction - it only uses cached data.
+ * Users must seed the cache via Settings → Intelligence Cache.
+ */
 export async function extractAllIntelligence(
   episodes: Episode[],
   onProgress?: (current: number, total: number, message: string) => void
@@ -173,137 +178,38 @@ export async function extractAllIntelligence(
   const companiesMap = new Map<string, CompanyIntelligence>();
   const frameworksMap = new Map<string, Framework>();
 
-  // Check cache first
-  onProgress?.(0, episodes.length, 'Checking cache for previously extracted episodes...');
+  // Check cache
+  onProgress?.(0, episodes.length, 'Loading intelligence from cache...');
   const episodeIds = episodes.map(e => e.id);
   const cachedIntelligence = await getCachedIntelligence(episodeIds);
   
-  // Separate cached vs uncached episodes
-  const uncachedEpisodes: Episode[] = [];
+  // Aggregate cached data
+  let cachedCount = 0;
   
   for (const episode of episodes) {
     const cached = cachedIntelligence.get(episode.id);
     if (cached) {
-      // Use cached intelligence
       aggregateIntelligence(cached, episode, companiesMap, frameworksMap);
-    } else {
-      uncachedEpisodes.push(episode);
+      cachedCount++;
     }
   }
   
-  const cachedCount = episodes.length - uncachedEpisodes.length;
-  if (cachedCount > 0) {
-    onProgress?.(cachedCount, episodes.length, `Loaded ${cachedCount} episodes from cache. ${uncachedEpisodes.length} to extract...`);
-  }
-
-  // IMPORTANT: This app must work end-to-end without paid AI extraction.
-  // If nothing is cached yet, do NOT attempt to call the AI extraction function.
-  // Instead, instruct the user to seed the cache (Settings → Intelligence Cache).
+  // Report results
   if (cachedCount === 0) {
     onProgress?.(
       0,
       episodes.length,
-      'No cached intelligence found. Go to Settings → Intelligence Cache and click “Seed Intelligence Cache”.'
+      'No cached intelligence. Go to Settings → Seed Intelligence Cache.'
     );
-
     return { companies: [], frameworks: [] };
   }
-  
-  // If everything is cached, we're done
-  if (uncachedEpisodes.length === 0) {
-    onProgress?.(episodes.length, episodes.length, 'All episodes loaded from cache!');
-    
-    const companies = Array.from(companiesMap.values())
-      .sort((a, b) => b.episode_count - a.episode_count);
-    const frameworks = Array.from(frameworksMap.values())
-      .sort((a, b) => b.mentioned_in.length - a.mentioned_in.length);
-    
-    return { companies, frameworks };
-  }
 
-  // Process uncached episodes sequentially to avoid rate limits
-  const batchSize = 1;
-  let sawRateLimit = false;
-  let sawPaymentRequired = false;
-
-  for (let i = 0; i < uncachedEpisodes.length; i += batchSize) {
-    const batch = uncachedEpisodes.slice(i, i + batchSize);
-    const overallProgress = cachedCount + i;
-
-    onProgress?.(
-      overallProgress, 
-      episodes.length, 
-      `Extracting episode ${i + 1} of ${uncachedEpisodes.length} (${cachedCount} from cache)...`
-    );
-
-    const results = await Promise.allSettled(
-      batch.map((episode) =>
-        extractIntelligence({
-          transcript: episode.transcript,
-          episodeId: episode.id,
-          guestName: episode.guest,
-          episodeTitle: episode.title,
-        })
-      )
-    );
-
-    // Process results
-    for (let idx = 0; idx < results.length; idx++) {
-      const result = results[idx];
-      const episode = batch[idx];
-      
-      if (result.status === 'rejected') {
-        const reason = result.reason as any;
-        const msg =
-          typeof reason?.message === 'string'
-            ? reason.message
-            : typeof reason === 'string'
-              ? reason
-              : '';
-        if (msg.includes('429') || msg.toLowerCase().includes('rate limited')) {
-          sawRateLimit = true;
-        }
-        if (msg.includes('402') || msg.toLowerCase().includes('payment required')) {
-          sawPaymentRequired = true;
-        }
-        console.warn(`Failed to extract from ${episode.id}:`, result.reason);
-        continue;
-      }
-
-      const intelligence = result.value;
-      
-      // Cache the result for future runs
-      await cacheIntelligence(
-        episode.id,
-        episode.guest,
-        episode.title,
-        intelligence
-      );
-      
-      // Aggregate into maps
-      aggregateIntelligence(intelligence, episode, companiesMap, frameworksMap);
-    }
-
-    // Stop early if we hit payment or rate limit issues
-    if (sawPaymentRequired || sawRateLimit) {
-      console.warn('Stopping extraction early due to rate limit or payment issue. Returning partial results.');
-      break;
-    }
-
-    // Delay between batches to avoid rate limits
-    if (i + batchSize < uncachedEpisodes.length) {
-      const jitter = Math.floor(Math.random() * 600);
-      await new Promise((r) => setTimeout(r, 2500 + jitter));
-    }
-  }
-
-  // Log warnings but don't throw - return whatever we have
-  if (sawPaymentRequired) {
-    console.warn('Payment required (402) - returning partial results from cache only');
-  }
-
-  if (sawRateLimit) {
-    console.warn('Rate limited (429) - returning partial results');
+  const uncachedCount = episodes.length - cachedCount;
+  if (uncachedCount > 0) {
+    console.log(`Loaded ${cachedCount} episodes from cache. ${uncachedCount} not cached (skipped).`);
+    onProgress?.(cachedCount, episodes.length, `Loaded ${cachedCount} from cache. ${uncachedCount} skipped.`);
+  } else {
+    onProgress?.(episodes.length, episodes.length, `All ${cachedCount} episodes loaded from cache!`);
   }
 
   // Convert maps to arrays and sort
