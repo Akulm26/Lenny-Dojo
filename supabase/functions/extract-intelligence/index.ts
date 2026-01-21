@@ -167,14 +167,41 @@ Include ONLY items explicitly discussed. Empty arrays are fine if nothing fits a
     }
 
     let intelligenceData;
+    
+    // Clean up common AI JSON formatting issues
+    const cleanJson = (text: string): string => {
+      // Extract JSON from markdown code blocks
+      const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (codeBlockMatch) {
+        text = codeBlockMatch[1];
+      }
+      
+      // Find the JSON object
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) return text;
+      
+      let json = jsonMatch[0];
+      
+      // Fix trailing commas in arrays and objects (common AI mistake)
+      json = json.replace(/,(\s*[\]\}])/g, '$1');
+      
+      // Fix unescaped newlines in strings
+      json = json.replace(/:\s*"([^"]*(?:\\.[^"]*)*)"/g, (match) => {
+        return match.replace(/\n/g, '\\n').replace(/\r/g, '\\r');
+      });
+      
+      return json;
+    };
+
     try {
       intelligenceData = JSON.parse(content);
     } catch {
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        intelligenceData = JSON.parse(jsonMatch[0]);
-      } else {
-        throw new Error('Failed to parse intelligence response');
+      const cleaned = cleanJson(content);
+      try {
+        intelligenceData = JSON.parse(cleaned);
+      } catch (e2) {
+        console.error('JSON parse failed even after cleaning. First 2000 chars:', cleaned.substring(0, 2000));
+        throw new Error('Failed to parse intelligence response: ' + (e2 instanceof Error ? e2.message : String(e2)));
       }
     }
 
