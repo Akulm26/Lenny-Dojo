@@ -1,11 +1,30 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 
 const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+// Service role authentication - only allow internal/admin access
+function authenticateServiceRole(req: Request): { authenticated: boolean; error?: string } {
+  const authHeader = req.headers.get('Authorization');
+  
+  if (!authHeader?.startsWith('Bearer ')) {
+    return { authenticated: false, error: 'Missing or invalid Authorization header' };
+  }
+
+  const token = authHeader.replace('Bearer ', '');
+  
+  // Check if it's the service role key
+  if (token === SUPABASE_SERVICE_ROLE_KEY) {
+    return { authenticated: true };
+  }
+
+  return { authenticated: false, error: 'Unauthorized - service role required' };
+}
 
 // Validation constants
 const MAX_TRANSCRIPT_LENGTH = 60000;
@@ -55,6 +74,15 @@ serve(async (req) => {
   }
 
   try {
+    // Authenticate - require service role for admin operations
+    const auth = authenticateServiceRole(req);
+    if (!auth.authenticated) {
+      return new Response(
+        JSON.stringify({ error: auth.error || 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     if (!LOVABLE_API_KEY) {
       throw new Error('LOVABLE_API_KEY is not configured');
     }
