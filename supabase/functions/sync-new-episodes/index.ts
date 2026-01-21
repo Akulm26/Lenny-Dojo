@@ -5,25 +5,34 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-secret',
 };
 
-// Service role authentication - only allow internal/admin access
-function authenticateServiceRole(req: Request): { authenticated: boolean; error?: string } {
+// Authentication - supports service role OR cron secret
+function authenticateRequest(req: Request): { authenticated: boolean; error?: string } {
   const authHeader = req.headers.get('Authorization');
+  const cronSecret = req.headers.get('x-cron-secret');
+  const expectedCronSecret = Deno.env.get('CRON_SECRET');
   
-  if (!authHeader?.startsWith('Bearer ')) {
-    return { authenticated: false, error: 'Missing or invalid Authorization header' };
+  // Option 1: Service role key authentication (for manual triggers)
+  if (authHeader?.startsWith('Bearer ')) {
+    const token = authHeader.replace('Bearer ', '');
+    if (token === SUPABASE_SERVICE_ROLE_KEY) {
+      return { authenticated: true };
+    }
   }
-
-  const token = authHeader.replace('Bearer ', '');
   
-  // Check if it's the service role key
-  if (token === SUPABASE_SERVICE_ROLE_KEY) {
+  // Option 2: Cron secret authentication (for scheduled jobs)
+  if (cronSecret && expectedCronSecret && cronSecret === expectedCronSecret) {
     return { authenticated: true };
   }
-
-  return { authenticated: false, error: 'Unauthorized - service role required' };
+  
+  // No valid auth found
+  if (!authHeader && !cronSecret) {
+    return { authenticated: false, error: 'Missing authentication' };
+  }
+  
+  return { authenticated: false, error: 'Invalid credentials' };
 }
 
 const GITHUB_API_BASE = 'https://api.github.com/repos/nicoles/lennys-podcast-transcripts';
@@ -201,8 +210,8 @@ serve(async (req) => {
   }
 
   try {
-    // Authenticate - require service role for admin operations
-    const auth = authenticateServiceRole(req);
+    // Authenticate - require service role or cron secret
+    const auth = authenticateRequest(req);
     if (!auth.authenticated) {
       return new Response(
         JSON.stringify({ error: auth.error || 'Unauthorized' }),
