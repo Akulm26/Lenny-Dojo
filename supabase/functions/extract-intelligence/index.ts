@@ -105,7 +105,7 @@ Extract intelligence from this transcript. Return ONLY this JSON:
 Include ONLY items explicitly discussed. Empty arrays are fine if nothing fits a category.`;
 
     // Use Lovable AI API (OpenRouter-compatible endpoint)
-    const response = await fetch('https://api.lovable.dev/v1/chat/completions', {
+    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
