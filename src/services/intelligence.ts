@@ -1,6 +1,9 @@
 import { extractIntelligence, ExtractedIntelligence } from './ai';
 import { Episode } from './github';
-import { getCachedIntelligence, cacheIntelligence } from './intelligenceCache';
+import { getCachedIntelligence, cacheIntelligence, loadAllCachedIntelligence } from './intelligenceCache';
+
+// Re-export for convenience
+export { loadAllCachedIntelligence } from './intelligenceCache';
 
 // ============================================
 // TYPES
@@ -300,5 +303,46 @@ export async function extractAllIntelligence(
   const frameworks = Array.from(frameworksMap.values())
     .sort((a, b) => b.mentioned_in.length - a.mentioned_in.length);
 
+  return { companies, frameworks };
+}
+
+// ============================================
+// LOAD FROM SUPABASE CACHE (no GitHub needed)
+// ============================================
+
+/**
+ * Load and aggregate all intelligence directly from the Supabase cache.
+ * This is the fastest path when data already exists in the database.
+ */
+export async function loadCachedCompaniesAndFrameworks(): Promise<{
+  companies: CompanyIntelligence[];
+  frameworks: Framework[];
+}> {
+  const cachedRecords = await loadAllCachedIntelligence();
+  
+  if (cachedRecords.length === 0) {
+    return { companies: [], frameworks: [] };
+  }
+  
+  const companiesMap = new Map<string, CompanyIntelligence>();
+  const frameworksMap = new Map<string, Framework>();
+  
+  for (const record of cachedRecords) {
+    // Create a minimal Episode-like object for aggregation
+    const fakeEpisode = {
+      id: record.episode_id,
+      guest: record.guest_name,
+      title: record.episode_title
+    } as Episode;
+    
+    aggregateIntelligence(record.intelligence, fakeEpisode, companiesMap, frameworksMap);
+  }
+  
+  const companies = Array.from(companiesMap.values())
+    .sort((a, b) => b.episode_count - a.episode_count);
+  
+  const frameworks = Array.from(frameworksMap.values())
+    .sort((a, b) => b.mentioned_in.length - a.mentioned_in.length);
+  
   return { companies, frameworks };
 }

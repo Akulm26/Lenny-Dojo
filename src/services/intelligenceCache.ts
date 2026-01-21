@@ -114,3 +114,35 @@ export async function clearIntelligenceCache(): Promise<void> {
     console.warn('Error clearing cache:', e);
   }
 }
+
+/**
+ * Load all cached intelligence from Supabase
+ * Returns raw records for aggregation
+ */
+export async function loadAllCachedIntelligence(): Promise<Array<{
+  episode_id: string;
+  guest_name: string;
+  episode_title: string;
+  intelligence: ExtractedIntelligence;
+}>> {
+  try {
+    const { data, error } = await supabase
+      .from('episode_intelligence_cache')
+      .select('episode_id, guest_name, episode_title, intelligence');
+    
+    if (error) {
+      console.warn('Failed to load intelligence cache:', error);
+      return [];
+    }
+    
+    return (data || []).map(row => ({
+      episode_id: row.episode_id,
+      guest_name: row.guest_name,
+      episode_title: row.episode_title,
+      intelligence: row.intelligence as unknown as ExtractedIntelligence
+    }));
+  } catch (e) {
+    console.warn('Error loading intelligence cache:', e);
+    return [];
+  }
+}
