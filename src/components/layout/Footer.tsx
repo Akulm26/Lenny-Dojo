@@ -27,6 +27,10 @@ export const Footer = forwardRef<HTMLElement>(function Footer(_, ref) {
             )}
           </div>
         </div>
+        
+        <div className="mt-4 pt-4 border-t border-border/50 text-center text-xs text-muted-foreground/70">
+          By: Akul S. Malhotra
+        </div>
       </div>
     </footer>
   );
