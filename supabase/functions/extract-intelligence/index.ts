@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 
-const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
+const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -20,8 +20,8 @@ serve(async (req) => {
   }
 
   try {
-    if (!ANTHROPIC_API_KEY) {
-      throw new Error('ANTHROPIC_API_KEY is not configured');
+    if (!LOVABLE_API_KEY) {
+      throw new Error('LOVABLE_API_KEY is not configured');
     }
 
     const body: ExtractRequest = await req.json();
@@ -103,24 +103,25 @@ Extract intelligence from this transcript. Return ONLY this JSON:
 
 Include ONLY items explicitly discussed. Empty arrays are fine if nothing fits a category.`;
 
-    // Call Claude with retries for transient 429s
+    // Call Lovable AI with retries for transient 429s
     const maxAttempts = 6;
     let lastStatus = 0;
     let content = '';
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
+      const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-api-key': ANTHROPIC_API_KEY,
-          'anthropic-version': '2023-06-01',
+          'Authorization': `Bearer ${LOVABLE_API_KEY}`,
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
+          model: 'google/gemini-2.5-pro',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+          ],
           max_tokens: 8000,
-          system: systemPrompt,
-          messages: [{ role: 'user', content: userPrompt }],
         }),
       });
 
@@ -128,7 +129,7 @@ Include ONLY items explicitly discussed. Empty arrays are fine if nothing fits a
 
       if (response.ok) {
         const data = await response.json();
-        content = data.content?.[0]?.text ?? '';
+        content = data.choices?.[0]?.message?.content ?? '';
         break;
       }
 
@@ -149,12 +150,19 @@ Include ONLY items explicitly discussed. Empty arrays are fine if nothing fits a
         continue;
       }
 
-      console.error('Claude API error:', response.status, errorText);
-      throw new Error(`Claude API error: ${response.status}`);
+      if (response.status === 402) {
+        return new Response(JSON.stringify({ error: 'Payment required. Please add funds to your Lovable AI workspace.' }), {
+          status: 402,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      console.error('Lovable AI error:', response.status, errorText);
+      throw new Error(`Lovable AI error: ${response.status}`);
     }
 
     if (!content) {
-      throw new Error(`Claude API error: ${lastStatus}`);
+      throw new Error(`Lovable AI error: ${lastStatus}`);
     }
 
     let intelligenceData;
