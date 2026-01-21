@@ -79,6 +79,10 @@ export async function extractAllIntelligence(
   // Process episodes sequentially to avoid rate limits
   const batchSize = 1;
 
+  // If the backend starts rate limiting, stop early and surface a helpful error
+  // so the UI doesn't look "empty" with no explanation.
+  let sawRateLimit = false;
+
   for (let i = 0; i < episodes.length; i += batchSize) {
     const batch = episodes.slice(i, i + batchSize);
 
@@ -98,6 +102,16 @@ export async function extractAllIntelligence(
     // Process results
     results.forEach((result, idx) => {
       if (result.status === 'rejected') {
+        const reason = result.reason as any;
+        const msg =
+          typeof reason?.message === 'string'
+            ? reason.message
+            : typeof reason === 'string'
+              ? reason
+              : '';
+        if (msg.includes('429') || msg.toLowerCase().includes('rate limited')) {
+          sawRateLimit = true;
+        }
         console.warn(`Failed to extract from ${batch[idx].id}:`, result.reason);
         return;
       }
@@ -193,8 +207,14 @@ export async function extractAllIntelligence(
 
     // Delay between batches to avoid rate limits
     if (i + batchSize < episodes.length) {
-      await new Promise((r) => setTimeout(r, 1500));
+      // A bit of jitter helps avoid "thundering herd" if multiple users sync at once.
+      const jitter = Math.floor(Math.random() * 600);
+      await new Promise((r) => setTimeout(r, 2500 + jitter));
     }
+  }
+
+  if (sawRateLimit) {
+    throw new Error('AI rate limited (429). Please wait a few minutes and try syncing again.');
   }
 
   // Convert maps to arrays and sort

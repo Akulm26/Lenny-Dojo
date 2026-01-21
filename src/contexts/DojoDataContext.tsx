@@ -34,7 +34,10 @@ export function DojoDataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (dojoSync.status === 'idle' && dojoSync.episodes.length === 0) {
       // Load from cache first, then check for updates
-      dojoSync.checkAndSync();
+      // Avoid unhandled promise rejections (which can blank-screen the app)
+      void dojoSync.checkAndSync().catch((e) => {
+        console.error('Dojo initial sync check failed:', e);
+      });
     }
     // IMPORTANT: do NOT depend on the entire dojoSync object here (it changes every render)
     // or we'll trigger repeated sync attempts and keep the UI in a loading state.

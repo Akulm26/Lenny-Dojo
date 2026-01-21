@@ -116,12 +116,13 @@ Include ONLY items explicitly discussed. Empty arrays are fine if nothing fits a
           'Authorization': `Bearer ${LOVABLE_API_KEY}`,
         },
         body: JSON.stringify({
-          model: 'google/gemini-2.5-pro',
+          // Use a faster/less rate-limit-prone model for large batch extraction
+          model: 'google/gemini-3-flash-preview',
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userPrompt }
           ],
-          max_tokens: 8000,
+          max_tokens: 4096,
         }),
       });
 

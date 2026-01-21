@@ -19,7 +19,7 @@ import { useDojoData } from '@/contexts/DojoDataContext';
 type SortOption = 'mentions' | 'alphabetical' | 'decisions';
 
 export default function Companies() {
-  const { companies, isLoading, isReady, sync, status, progressMessage, progress } = useDojoData();
+  const { companies, isLoading, isReady, sync, status, progressMessage, error } = useDojoData();
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<SortOption>('mentions');
   
@@ -120,9 +120,24 @@ export default function Companies() {
             ))}
           </div>
         )}
+
+        {/* Error State */}
+        {status === 'error' && (
+          <div className="text-center py-16">
+            <Building2 className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+            <h3 className="text-lg font-semibold mb-2">Sync paused</h3>
+            <p className="text-muted-foreground mb-4">
+              {error || 'Something went wrong while extracting intelligence. Please try again.'}
+            </p>
+            <Button onClick={sync} className="gap-2">
+              <RefreshCw className="h-4 w-4" />
+              Retry Sync
+            </Button>
+          </div>
+        )}
         
         {/* Empty State */}
-        {showEmptyState && (
+        {showEmptyState && status !== 'error' && (
           <div className="text-center py-16">
             <Building2 className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
             <h3 className="text-lg font-semibold mb-2">No Companies Yet</h3>
