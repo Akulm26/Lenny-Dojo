@@ -19,7 +19,7 @@ import { useDojoData } from '@/contexts/DojoDataContext';
 type SortOption = 'mentions' | 'alphabetical' | 'decisions';
 
 export default function Companies() {
-  const { companies, isLoading, isReady, sync, status } = useDojoData();
+  const { companies, isLoading, isReady, sync, status, progressMessage, progress } = useDojoData();
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<SortOption>('mentions');
   
@@ -62,10 +62,9 @@ export default function Companies() {
               Company Success Autopsy
             </h1>
             <p className="text-muted-foreground">
-              {isReady 
+              {isReady
                 ? `Deep dive into ${companies.length} companies discussed on the podcast`
-                : 'Loading company intelligence from podcasts...'
-              }
+                : (progressMessage || 'Loading company intelligence from podcasts...')}
             </p>
           </div>
           
