@@ -287,6 +287,9 @@ export function useDojoSync() {
     sync: manualSync,
     checkAndSync: checkAndSyncIfNeeded,
     isLoading: ['checking', 'syncing', 'processing'].includes(state.status),
-    isReady: state.status === 'complete' && state.episodes.length > 0
+    // "Ready" should mean the UI can render real data.
+    // When loading from the database cache we may not have episode transcripts/metadata in memory,
+    // but companies/frameworks are still fully usable.
+    isReady: state.status === 'complete' && (state.companies.length > 0 || state.frameworks.length > 0)
   };
 }

@@ -80,6 +80,10 @@ function aggregateIntelligence(
 ) {
   // Aggregate companies
   for (const company of intelligence.companies || []) {
+    if (!company?.name || typeof company.name !== 'string') {
+      // Skip malformed entries from older cache rows
+      continue;
+    }
     const key = company.name.toLowerCase();
     const existing = companiesMap.get(key) || {
       name: company.name,
@@ -128,6 +132,8 @@ function aggregateIntelligence(
 
   // Aggregate question seeds
   for (const seed of intelligence.question_seeds || []) {
+    // Some older cache rows may have incomplete seeds
+    if (!seed?.company || typeof seed.company !== 'string') continue;
     const companyKey = seed.company.toLowerCase();
     const existing = companiesMap.get(companyKey);
     if (existing) {
@@ -142,6 +148,7 @@ function aggregateIntelligence(
 
   // Aggregate frameworks
   for (const framework of intelligence.frameworks || []) {
+    if (!framework?.name || typeof framework.name !== 'string') continue;
     const key = framework.name.toLowerCase();
     const existing = frameworksMap.get(key);
 
