@@ -41,6 +41,60 @@ const CATEGORY_COLORS: Record<string, string> = {
   ai_ml: 'bg-emerald-100 text-emerald-700 border-emerald-200',
 };
 
+// Generate a concise TL;DR summary
+function generateTLDR(framework: { name: string; explanation?: string; category?: string; creator?: string }): string {
+  const { name, explanation, category, creator } = framework;
+  
+  if (explanation) {
+    // Create a punchy one-liner from the explanation
+    const firstSentence = explanation.split('.')[0];
+    return `${name} is ${firstSentence.toLowerCase().startsWith(name.toLowerCase()) ? firstSentence : `a ${category || 'product'} framework that ${firstSentence.toLowerCase()}`}${creator ? ` — developed by ${creator}` : ''}.`;
+  }
+  
+  return `${name} is a ${category?.replace('_', ' ') || 'product management'} framework ${creator ? `by ${creator} ` : ''}used to improve decision-making and strategic thinking.`;
+}
+
+// Generate a comprehensive end-to-end overview
+function generateCompleteOverview(framework: {
+  name: string;
+  explanation?: string;
+  when_to_use?: string;
+  example?: string;
+  category?: string;
+  creator?: string;
+  mentioned_in?: Array<{ guest_name: string }>;
+}): string {
+  const { name, explanation, when_to_use, example, category, creator, mentioned_in } = framework;
+  
+  const parts: string[] = [];
+  
+  // What it is
+  if (explanation) {
+    parts.push(explanation);
+  } else {
+    parts.push(`${name} is a ${category?.replace('_', ' ') || 'product management'} framework${creator ? ` developed by ${creator}` : ''}.`);
+  }
+  
+  // When to use
+  if (when_to_use) {
+    parts.push(`Apply this framework when ${when_to_use.toLowerCase().startsWith('when') ? when_to_use.slice(5) : when_to_use.toLowerCase()}`);
+  }
+  
+  // Example
+  if (example) {
+    parts.push(`In practice, ${example.toLowerCase().startsWith('for example') || example.toLowerCase().startsWith('e.g.') ? example.slice(example.indexOf(',') + 1).trim() : example}`);
+  }
+  
+  // Source credibility
+  const guestCount = mentioned_in?.length || 0;
+  if (guestCount > 0) {
+    const uniqueGuests = [...new Set(mentioned_in?.map(m => m.guest_name) || [])];
+    parts.push(`This framework has been discussed by ${guestCount} podcast guest${guestCount > 1 ? 's' : ''}${uniqueGuests.length <= 3 ? `, including ${uniqueGuests.slice(0, 3).join(', ')}` : ''}.`);
+  }
+  
+  return parts.join(' ');
+}
+
 export default function FrameworkDetail() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
@@ -137,10 +191,21 @@ export default function FrameworkDetail() {
         <div className="p-5 rounded-xl border-2 border-primary/30 bg-gradient-to-br from-primary/5 to-primary/10 mb-8">
           <div className="flex items-center gap-2 mb-3">
             <Zap className="h-5 w-5 text-primary" />
-            <h2 className="font-bold text-lg">TL;DR — What Is It?</h2>
+            <h2 className="font-bold text-lg">TL;DR — Quick Summary</h2>
           </div>
-          <p className="text-sm leading-relaxed">
-            {framework.explanation || 'A framework discussed by podcast guests for improving product management decisions.'}
+          <p className="text-sm leading-relaxed font-medium">
+            {generateTLDR(framework)}
+          </p>
+        </div>
+        
+        {/* Complete Overview - End-to-End Explanation */}
+        <div className="p-5 rounded-xl border border-border bg-card mb-8">
+          <div className="flex items-center gap-2 mb-3">
+            <BookOpen className="h-5 w-5 text-primary" />
+            <h2 className="font-bold text-lg">Complete Overview</h2>
+          </div>
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            {generateCompleteOverview(framework)}
           </p>
         </div>
         
