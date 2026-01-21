@@ -18,7 +18,8 @@ function slugToName(slug: string): string {
  * FAST MODE: Uses episode IDs directly without fetching individual transcripts.
  */
 export async function seedIntelligenceCache(
-  onProgress?: (current: number, total: number, message: string) => void
+  onProgress?: (current: number, total: number, message: string) => void,
+  forceReExtract: boolean = true // Default to true to always use real AI extraction
 ): Promise<{ cached: number; seeded: number; total: number }> {
   
   onProgress?.(0, 100, 'Fetching episode list from GitHub...');
@@ -36,11 +37,11 @@ export async function seedIntelligenceCache(
     title: `${slugToName(id)} on Lenny's Podcast`,
   }));
   
-  onProgress?.(total * 0.2, total, `Seeding cache for ${episodes.length} episodes...`);
+  onProgress?.(total * 0.2, total, `Extracting intelligence from ${episodes.length} episodes with AI...`);
   
-  // Call edge function to seed the cache (processes in batches server-side)
+  // Call edge function to seed the cache with real AI extraction
   const { data, error } = await supabase.functions.invoke('seed-intelligence-cache', {
-    body: { episodes }
+    body: { episodes, forceReExtract }
   });
   
   if (error) {
@@ -48,7 +49,8 @@ export async function seedIntelligenceCache(
     throw new Error(error.message || 'Failed to seed intelligence cache');
   }
   
-  onProgress?.(total, total, `Done! Seeded ${data.seeded} episodes.`);
+  const seededCount = data.seeded || 0;
+  onProgress?.(total, total, `Done! Extracted ${seededCount} episodes with real AI.`);
   
   return data;
 }
