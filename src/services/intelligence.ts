@@ -195,6 +195,19 @@ export async function extractAllIntelligence(
   if (cachedCount > 0) {
     onProgress?.(cachedCount, episodes.length, `Loaded ${cachedCount} episodes from cache. ${uncachedEpisodes.length} to extract...`);
   }
+
+  // IMPORTANT: This app must work end-to-end without paid AI extraction.
+  // If nothing is cached yet, do NOT attempt to call the AI extraction function.
+  // Instead, instruct the user to seed the cache (Settings → Intelligence Cache).
+  if (cachedCount === 0) {
+    onProgress?.(
+      0,
+      episodes.length,
+      'No cached intelligence found. Go to Settings → Intelligence Cache and click “Seed Intelligence Cache”.'
+    );
+
+    return { companies: [], frameworks: [] };
+  }
   
   // If everything is cached, we're done
   if (uncachedEpisodes.length === 0) {

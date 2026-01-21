@@ -142,12 +142,20 @@ export default function Companies() {
             <Building2 className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
             <h3 className="text-lg font-semibold mb-2">No Companies Yet</h3>
             <p className="text-muted-foreground mb-4">
-              Sync the podcast transcripts to extract company intelligence.
+              Seed the Intelligence Cache in Settings to load company data (no AI calls).
             </p>
-            <Button onClick={sync} className="gap-2">
-              <RefreshCw className="h-4 w-4" />
-              Start Sync
-            </Button>
+            <div className="flex items-center justify-center gap-2">
+              <Button asChild className="gap-2">
+                <Link to="/settings">
+                  <RefreshCw className="h-4 w-4" />
+                  Go to Settings
+                </Link>
+              </Button>
+              <Button variant="outline" onClick={sync} className="gap-2">
+                <RefreshCw className="h-4 w-4" />
+                Retry Sync
+              </Button>
+            </div>
           </div>
         )}
         
