@@ -77,6 +77,32 @@ export function useDojoSync() {
           latestTranscriptDate: syncStatus.latest_episode_date,
           status: 'complete'
         }));
+
+        // IMPORTANT: localStorage may contain stale/demo aggregates.
+        // In the background, refresh from the database cache and overwrite
+        // localStorage + in-memory state if authoritative data exists.
+        // (Keeps fast initial render while ensuring data correctness.)
+        (async () => {
+          try {
+            const { companies, frameworks } = await loadCachedCompaniesAndFrameworks();
+            if (companies.length > 0) {
+              storeCompanies(companies);
+              storeFrameworks(frameworks);
+
+              setState(prev => ({
+                ...prev,
+                companies,
+                frameworks,
+                totalEpisodes: cachedEpisodeCount || prev.totalEpisodes,
+                progressMessage: `Loaded ${companies.length} companies from cache`,
+              }));
+            }
+          } catch (e) {
+            // Keep local data if cache refresh fails.
+            console.warn('Background cache refresh failed:', e);
+          }
+        })();
+
         return;
       }
       
