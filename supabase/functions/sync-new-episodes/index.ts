@@ -37,7 +37,6 @@ function authenticateRequest(req: Request): { authenticated: boolean; error?: st
 
 const GITHUB_API_BASE = 'https://api.github.com/repos/ChatPRD/lennys-podcast-transcripts';
 const GITHUB_RAW_BASE = 'https://raw.githubusercontent.com/ChatPRD/lennys-podcast-transcripts/main';
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
 
 async function fetchEpisodeList(): Promise<string[]> {
   const response = await fetch(`${GITHUB_API_BASE}/contents/episodes`, {
@@ -84,125 +83,51 @@ async function fetchEpisodeContent(episodeId: string): Promise<{ guest: string; 
   }
 }
 
-async function extractIntelligenceWithAI(
-  transcript: string,
-  episodeId: string,
-  guestName: string,
-  episodeTitle: string,
-  apiKey: string
-): Promise<any> {
-  // Truncate transcript if too long
-  const maxChars = 60000;
-  const truncatedTranscript = transcript.length > maxChars 
-    ? transcript.substring(0, maxChars) + '\n\n[TRANSCRIPT TRUNCATED]'
-    : transcript;
+async function extractIntelligenceViaFunction(params: {
+  transcript: string;
+  episodeId: string;
+  guestName: string;
+  episodeTitle: string;
+  supabaseUrl: string;
+  serviceRoleKey: string;
+}): Promise<any> {
+  const { transcript, episodeId, guestName, episodeTitle, supabaseUrl, serviceRoleKey } = params;
 
-  const systemPrompt = `You are an expert analyst extracting structured intelligence from podcast transcripts.
-Extract ONLY information that is EXPLICITLY STATED in the transcript. Do not infer or assume.
+  const url = `${supabaseUrl}/functions/v1/extract-intelligence`;
 
-Return a JSON object with this structure:
-{
-  "companies": [
-    {
-      "name": "Company Name",
-      "is_guest_company": true/false,
-      "mention_context": "Brief context of how mentioned",
-      "decisions": [{"what": "", "when": null, "why": "", "outcome": "", "quote": ""}],
-      "opinions": [{"opinion": "", "quote": ""}],
-      "metrics_mentioned": []
-    }
-  ],
-  "frameworks": [
-    {
-      "name": "Framework Name",
-      "creator": "Who created it",
-      "category": "Growth/Product/Leadership/etc",
-      "explanation": "What it is",
-      "when_to_use": "When to apply",
-      "example": "Example from transcript",
-      "quote": "Direct quote"
-    }
-  ],
-  "question_seeds": [
-    {
-      "type": "product/growth/leadership/strategy",
-      "company": "Company name",
-      "situation": "Brief situation",
-      "what_happened": "What happened",
-      "usable_quotes": []
-    }
-  ],
-  "memorable_quotes": [
-    {
-      "quote": "Exact quote",
-      "topic": "Topic",
-      "context": "Context"
-    }
-  ]
-}`;
-
-  const userPrompt = `Extract intelligence from this podcast transcript featuring ${guestName}:
-
-Episode: ${episodeTitle}
-
-TRANSCRIPT:
-${truncatedTranscript}
-
-Return ONLY valid JSON matching the schema. Extract real companies, frameworks, and quotes from the transcript.`;
-
-  const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
+  const response = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      // The extract-intelligence function is intentionally restricted to service role.
+      Authorization: `Bearer ${serviceRoleKey}`,
+      apikey: serviceRoleKey,
     },
     body: JSON.stringify({
-      contents: [
-        {
-          parts: [
-            { text: `${systemPrompt}\n\n${userPrompt}` }
-          ]
-        }
-      ],
-      generationConfig: {
-        temperature: 0.3,
-        maxOutputTokens: 8192,
-      },
+      transcript,
+      episodeId,
+      guestName,
+      episodeTitle,
     }),
   });
 
   if (!response.ok) {
     const status = response.status;
+    const errorText = await response.text();
+
     if (status === 429) {
       throw new Error('RATE_LIMITED');
     }
-    if (status === 402 || status === 403) {
-      throw new Error('API_KEY_ERROR');
+
+    if (status === 402) {
+      throw new Error('PAYMENT_REQUIRED');
     }
-    const errorText = await response.text();
-    console.error('Gemini API error:', status, errorText);
-    throw new Error(`Gemini API error: ${status}`);
+
+    console.error('extract-intelligence error:', status, errorText);
+    throw new Error(`extract-intelligence error: ${status}`);
   }
 
-  const data = await response.json();
-  const content = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-  
-  // Parse JSON from response
-  const jsonMatch = content.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    throw new Error('No valid JSON in AI response');
-  }
-  
-  const intelligence = JSON.parse(jsonMatch[0]);
-  
-  return {
-    ...intelligence,
-    _source: {
-      episode_id: episodeId,
-      guest_name: guestName,
-      episode_title: episodeTitle,
-      extracted_at: new Date().toISOString(),
-    },
-  };
+  return await response.json();
 }
 
 serve(async (req) => {
@@ -222,12 +147,7 @@ serve(async (req) => {
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const geminiApiKey = Deno.env.get('GOOGLE_GEMINI_API_KEY');
     const supabase = createClient(supabaseUrl, supabaseKey);
-
-    if (!geminiApiKey) {
-      throw new Error('GOOGLE_GEMINI_API_KEY not configured');
-    }
 
     console.log('Checking GitHub for new episodes...');
     
@@ -279,14 +199,15 @@ serve(async (req) => {
           continue;
         }
 
-        // Extract intelligence using Google Gemini
-        const intelligence = await extractIntelligenceWithAI(
-          content.transcript,
+        // Extract intelligence using the internal AI-backed function (Lovable AI gateway)
+        const intelligence = await extractIntelligenceViaFunction({
+          transcript: content.transcript,
           episodeId,
-          content.guest,
-          content.title,
-          geminiApiKey
-        );
+          guestName: content.guest,
+          episodeTitle: content.title,
+          supabaseUrl,
+          serviceRoleKey: supabaseKey,
+        });
 
         // Store in cache
         const { error: insertError } = await supabase
@@ -311,7 +232,7 @@ serve(async (req) => {
 
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        if (msg === 'RATE_LIMITED' || msg === 'API_KEY_ERROR') {
+        if (msg === 'RATE_LIMITED' || msg === 'PAYMENT_REQUIRED') {
           console.log(`Stopping due to: ${msg}`);
           errors.push(`Stopped: ${msg}`);
           break;
@@ -324,7 +245,7 @@ serve(async (req) => {
 
     return new Response(
       JSON.stringify({
-        message: `Synced ${processed} new episodes with Google Gemini`,
+        message: `Synced ${processed} new episodes`,
         total: allEpisodeIds.length,
         cached: cachedIds.size,
         newFound: newEpisodeIds.length,
