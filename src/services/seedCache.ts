@@ -32,7 +32,8 @@ export async function seedIntelligenceCache(
 
   // IMPORTANT: do NOT send all episodes in a single request.
   // Edge functions have runtime limits; we chunk client-side and call repeatedly.
-  const CHUNK_SIZE = 5;
+  // Process in larger chunks client-side (10 per call), server does 3 in parallel
+  const CHUNK_SIZE = 10;
   let processed = 0;
   let seededTotal = 0;
 
