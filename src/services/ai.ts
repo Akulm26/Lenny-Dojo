@@ -151,6 +151,32 @@ export async function extractIntelligence(params: {
 
   if (error) {
     console.error('Extract intelligence error:', error);
+    
+    // Try to get the response body for more specific error info
+    const ctx = (error as any).context;
+    if (ctx && typeof ctx.json === 'function') {
+      try {
+        const body = await ctx.json();
+        if (body?.error?.includes('Payment required') || body?.error?.includes('402')) {
+          throw new Error('Payment required (402). Please add funds to your Lovable AI workspace.');
+        }
+        if (body?.error?.includes('rate') || body?.error?.includes('429')) {
+          throw new Error('Rate limited (429). Please wait and try again.');
+        }
+      } catch (parseError) {
+        // If JSON parsing fails, continue with generic error
+      }
+    }
+    
+    // Check if error message already contains status hints
+    const msg = error.message || '';
+    if (msg.includes('402') || msg.toLowerCase().includes('payment')) {
+      throw new Error('Payment required (402). Please add funds to your Lovable AI workspace.');
+    }
+    if (msg.includes('429') || msg.toLowerCase().includes('rate')) {
+      throw new Error('Rate limited (429). Please wait and try again.');
+    }
+    
     throw new Error(error.message || 'Failed to extract intelligence');
   }
 
