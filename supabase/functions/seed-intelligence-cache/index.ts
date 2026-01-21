@@ -20,8 +20,7 @@ const BRANCH = 'main';
 // Validation constants
 const MAX_EPISODES = 500;
 const MAX_STRING_LENGTH = 500;
-const BATCH_SIZE = 5; // Process 5 at a time to avoid rate limits
-const DELAY_BETWEEN_BATCHES = 3000; // 3 second delay between batches
+const CONCURRENCY = 3; // Process 3 episodes in parallel for speed
 
 interface EpisodeInput {
   id: string;
@@ -225,67 +224,64 @@ serve(async (req) => {
       );
     }
 
-    // Process episodes in small batches with real AI extraction
+    // Process episodes with parallel concurrency for speed
     let totalSeeded = 0;
     const errors: string[] = [];
 
-    for (let i = 0; i < episodesToProcess.length; i += BATCH_SIZE) {
-      const batch = episodesToProcess.slice(i, i + BATCH_SIZE);
-      console.log(`Processing batch ${Math.floor(i / BATCH_SIZE) + 1}: ${batch.length} episodes`);
-      
-      for (const episode of batch) {
-        try {
-          // Fetch real transcript from GitHub
-          const transcriptData = await fetchTranscript(episode.id);
-          
-          if (!transcriptData) {
-            errors.push(`${episode.id}: Failed to fetch transcript`);
-            continue;
-          }
-          
-          // Extract intelligence using AI
-          const intelligence = await extractIntelligence(
-            transcriptData.transcript,
-            episode.id,
-            transcriptData.guest,
-            transcriptData.title,
-            supabaseUrl,
-            supabaseKey
-          );
-          
-          // Store in cache
-          const { error: insertError } = await supabase
-            .from('episode_intelligence_cache')
-            .upsert({
-              episode_id: episode.id,
-              guest_name: transcriptData.guest,
-              episode_title: transcriptData.title,
-              intelligence,
-              extracted_at: new Date().toISOString(),
-            }, { onConflict: 'episode_id' });
-          
-          if (insertError) {
-            errors.push(`${episode.id}: ${insertError.message}`);
-          } else {
-            totalSeeded++;
-            console.log(`✓ Extracted: ${episode.id}`);
-          }
-          
-          // Small delay between individual episodes
-          await sleep(500);
-          
-        } catch (error) {
-          const msg = error instanceof Error ? error.message : 'Unknown error';
-          errors.push(`${episode.id}: ${msg}`);
-          console.error(`✗ Failed: ${episode.id} - ${msg}`);
+    // Helper to process a single episode
+    async function processEpisode(episode: EpisodeInput): Promise<boolean> {
+      try {
+        // Fetch real transcript from GitHub
+        const transcriptData = await fetchTranscript(episode.id);
+        
+        if (!transcriptData) {
+          errors.push(`${episode.id}: Failed to fetch transcript`);
+          return false;
         }
+        
+        // Extract intelligence using AI
+        const intelligence = await extractIntelligence(
+          transcriptData.transcript,
+          episode.id,
+          transcriptData.guest,
+          transcriptData.title,
+          supabaseUrl,
+          supabaseKey
+        );
+        
+        // Store in cache
+        const { error: insertError } = await supabase
+          .from('episode_intelligence_cache')
+          .upsert({
+            episode_id: episode.id,
+            guest_name: transcriptData.guest,
+            episode_title: transcriptData.title,
+            intelligence,
+            extracted_at: new Date().toISOString(),
+          }, { onConflict: 'episode_id' });
+        
+        if (insertError) {
+          errors.push(`${episode.id}: ${insertError.message}`);
+          return false;
+        }
+        
+        console.log(`✓ Extracted: ${episode.id}`);
+        return true;
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : 'Unknown error';
+        errors.push(`${episode.id}: ${msg}`);
+        console.error(`✗ Failed: ${episode.id} - ${msg}`);
+        return false;
       }
+    }
+
+    // Process in parallel chunks of CONCURRENCY size
+    for (let i = 0; i < episodesToProcess.length; i += CONCURRENCY) {
+      const chunk = episodesToProcess.slice(i, i + CONCURRENCY);
+      console.log(`Processing ${i + 1}-${Math.min(i + chunk.length, episodesToProcess.length)} of ${episodesToProcess.length}...`);
       
-      // Longer delay between batches to avoid rate limits
-      if (i + BATCH_SIZE < episodesToProcess.length) {
-        console.log(`Waiting ${DELAY_BETWEEN_BATCHES}ms before next batch...`);
-        await sleep(DELAY_BETWEEN_BATCHES);
-      }
+      const results = await Promise.all(chunk.map(ep => processEpisode(ep)));
+      totalSeeded += results.filter(Boolean).length;
     }
 
     return new Response(
