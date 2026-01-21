@@ -76,8 +76,8 @@ export async function extractAllIntelligence(
   const companiesMap = new Map<string, CompanyIntelligence>();
   const frameworksMap = new Map<string, Framework>();
 
-  // Process episodes in batches
-  const batchSize = 3; // Small batches to avoid rate limits
+  // Process episodes sequentially to avoid rate limits
+  const batchSize = 1;
 
   for (let i = 0; i < episodes.length; i += batchSize) {
     const batch = episodes.slice(i, i + batchSize);
@@ -85,12 +85,12 @@ export async function extractAllIntelligence(
     onProgress?.(i, episodes.length, `Analyzing episode ${i + 1} of ${episodes.length}...`);
 
     const results = await Promise.allSettled(
-      batch.map(episode =>
+      batch.map((episode) =>
         extractIntelligence({
           transcript: episode.transcript,
           episodeId: episode.id,
           guestName: episode.guest,
-          episodeTitle: episode.title
+          episodeTitle: episode.title,
         })
       )
     );
@@ -193,7 +193,7 @@ export async function extractAllIntelligence(
 
     // Delay between batches to avoid rate limits
     if (i + batchSize < episodes.length) {
-      await new Promise(r => setTimeout(r, 2000));
+      await new Promise((r) => setTimeout(r, 1500));
     }
   }
 

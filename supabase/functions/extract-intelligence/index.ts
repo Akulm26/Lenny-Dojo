@@ -1,7 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 
-// Use Lovable AI endpoint - no API key required, no rate limits
-const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -21,8 +20,8 @@ serve(async (req) => {
   }
 
   try {
-    if (!LOVABLE_API_KEY) {
-      throw new Error('LOVABLE_API_KEY is not configured');
+    if (!ANTHROPIC_API_KEY) {
+      throw new Error('ANTHROPIC_API_KEY is not configured');
     }
 
     const body: ExtractRequest = await req.json();
@@ -104,31 +103,59 @@ Extract intelligence from this transcript. Return ONLY this JSON:
 
 Include ONLY items explicitly discussed. Empty arrays are fine if nothing fits a category.`;
 
-    // Use Lovable AI API (OpenRouter-compatible endpoint)
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
-        ],
-        max_tokens: 8000
-      })
-    });
+    // Call Claude with retries for transient 429s
+    const maxAttempts = 6;
+    let lastStatus = 0;
+    let content = '';
 
-    if (!response.ok) {
-      const error = await response.text();
-      console.error('Lovable AI error:', error);
-      throw new Error(`Lovable AI error: ${response.status}`);
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 8000,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: userPrompt }],
+        }),
+      });
+
+      lastStatus = response.status;
+
+      if (response.ok) {
+        const data = await response.json();
+        content = data.content?.[0]?.text ?? '';
+        break;
+      }
+
+      const errorText = await response.text();
+
+      // Surface rate limiting clearly to the client
+      if (response.status === 429) {
+        if (attempt === maxAttempts) {
+          return new Response(JSON.stringify({ error: 'AI rate limited (429). Please try again in a few minutes.' }), {
+            status: 429,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        // Exponential backoff
+        const waitMs = Math.min(30000, 1500 * Math.pow(2, attempt - 1));
+        await new Promise((r) => setTimeout(r, waitMs));
+        continue;
+      }
+
+      console.error('Claude API error:', response.status, errorText);
+      throw new Error(`Claude API error: ${response.status}`);
     }
 
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content || '';
+    if (!content) {
+      throw new Error(`Claude API error: ${lastStatus}`);
+    }
 
     let intelligenceData;
     try {
