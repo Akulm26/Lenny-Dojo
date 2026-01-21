@@ -12,7 +12,7 @@ export function SyncStatusBar() {
   
   return (
     <div className={cn(
-      "fixed bottom-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full shadow-lg border flex items-center gap-3 text-sm",
+      "fixed bottom-4 right-4 z-50 px-4 py-2 rounded-full shadow-lg border flex items-center gap-3 text-sm",
       status === 'error' ? 'bg-destructive/10 border-destructive/20 text-destructive' : 'bg-card border-border'
     )}>
       {isLoading ? (
