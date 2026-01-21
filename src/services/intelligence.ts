@@ -79,9 +79,10 @@ export async function extractAllIntelligence(
   // Process episodes sequentially to avoid rate limits
   const batchSize = 1;
 
-  // If the backend starts rate limiting, stop early and surface a helpful error
-  // so the UI doesn't look "empty" with no explanation.
+  // If the backend starts rate limiting or requires payment, stop early and surface
+  // a helpful error so the UI doesn't look "empty" with no explanation.
   let sawRateLimit = false;
+  let sawPaymentRequired = false;
 
   for (let i = 0; i < episodes.length; i += batchSize) {
     const batch = episodes.slice(i, i + batchSize);
@@ -111,6 +112,9 @@ export async function extractAllIntelligence(
               : '';
         if (msg.includes('429') || msg.toLowerCase().includes('rate limited')) {
           sawRateLimit = true;
+        }
+        if (msg.includes('402') || msg.toLowerCase().includes('payment required')) {
+          sawPaymentRequired = true;
         }
         console.warn(`Failed to extract from ${batch[idx].id}:`, result.reason);
         return;
@@ -211,6 +215,10 @@ export async function extractAllIntelligence(
       const jitter = Math.floor(Math.random() * 600);
       await new Promise((r) => setTimeout(r, 2500 + jitter));
     }
+  }
+
+  if (sawPaymentRequired) {
+    throw new Error('Payment required (402). Please add funds to your Lovable AI workspace in Settings → Workspace → Usage.');
   }
 
   if (sawRateLimit) {
