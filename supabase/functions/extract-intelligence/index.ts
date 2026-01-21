@@ -1,15 +1,18 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
+const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY');
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Service role authentication - only allow internal/admin access
-function authenticateServiceRole(req: Request): { authenticated: boolean; error?: string } {
+// Authentication - accepts service role OR authenticated user JWT
+async function authenticateRequest(req: Request): Promise<{ authenticated: boolean; error?: string }> {
   const authHeader = req.headers.get('Authorization');
   
   if (!authHeader?.startsWith('Bearer ')) {
@@ -18,16 +21,30 @@ function authenticateServiceRole(req: Request): { authenticated: boolean; error?
 
   const token = authHeader.replace('Bearer ', '');
   
-  // Check if it's the service role key
+  // Option 1: Service role key (for internal sync-new-episodes calls)
   if (token === SUPABASE_SERVICE_ROLE_KEY) {
     return { authenticated: true };
   }
 
-  return { authenticated: false, error: 'Unauthorized - service role required' };
+  // Option 2: Validate user JWT token
+  try {
+    const supabase = createClient(SUPABASE_URL!, SUPABASE_ANON_KEY!, {
+      global: { headers: { Authorization: authHeader } }
+    });
+    
+    const { data, error } = await supabase.auth.getUser();
+    if (error || !data?.user) {
+      return { authenticated: false, error: 'Invalid or expired token' };
+    }
+    
+    return { authenticated: true };
+  } catch {
+    return { authenticated: false, error: 'Token validation failed' };
+  }
 }
 
 // Validation constants
-const MAX_TRANSCRIPT_LENGTH = 60000;
+const MAX_TRANSCRIPT_LENGTH = 120000; // Allow larger transcripts, will truncate for AI
 const MAX_STRING_LENGTH = 500;
 
 interface ExtractRequest {
@@ -38,18 +55,25 @@ interface ExtractRequest {
 }
 
 // Validate and sanitize string input
-function validateString(value: unknown, fieldName: string, maxLength: number): string {
+function validateString(value: unknown, fieldName: string, maxLength: number, truncate = false): string {
   if (typeof value !== 'string') {
     throw new Error(`${fieldName} must be a string`);
   }
   if (value.length === 0) {
     throw new Error(`${fieldName} cannot be empty`);
   }
-  if (value.length > maxLength) {
+  
+  let result = value;
+  
+  // Truncate if allowed and over limit
+  if (truncate && result.length > maxLength) {
+    result = result.substring(0, maxLength);
+  } else if (result.length > maxLength) {
     throw new Error(`${fieldName} exceeds maximum length of ${maxLength}`);
   }
+  
   // Basic sanitization - remove control characters except newlines/tabs
-  return value.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+  return result.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
 }
 
 // Validate request body
@@ -61,7 +85,8 @@ function validateRequest(body: unknown): ExtractRequest {
   const obj = body as Record<string, unknown>;
 
   return {
-    transcript: validateString(obj.transcript, 'transcript', MAX_TRANSCRIPT_LENGTH),
+    // Allow truncation for transcript since we'll truncate again for AI anyway
+    transcript: validateString(obj.transcript, 'transcript', MAX_TRANSCRIPT_LENGTH, true),
     episodeId: validateString(obj.episodeId, 'episodeId', MAX_STRING_LENGTH),
     guestName: validateString(obj.guestName, 'guestName', MAX_STRING_LENGTH),
     episodeTitle: validateString(obj.episodeTitle, 'episodeTitle', MAX_STRING_LENGTH),
@@ -74,8 +99,8 @@ serve(async (req) => {
   }
 
   try {
-    // Authenticate - require service role for admin operations
-    const auth = authenticateServiceRole(req);
+    // Authenticate - accepts service role OR authenticated user JWT
+    const auth = await authenticateRequest(req);
     if (!auth.authenticated) {
       return new Response(
         JSON.stringify({ error: auth.error || 'Unauthorized' }),
