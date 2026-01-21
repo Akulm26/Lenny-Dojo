@@ -8,8 +8,6 @@ import {
   Trash2,
   Download,
   ExternalLink,
-  Check,
-  Database,
   Loader2,
   CloudDownload,
 } from 'lucide-react';
@@ -25,61 +23,33 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { seedIntelligenceCache, getCacheStatus } from '@/services/seedCache';
-import { Progress } from '@/components/ui/progress';
 import { useDojoData } from '@/contexts/DojoDataContext';
-import { clearAllCache } from '@/services/github';
 import { supabase } from '@/integrations/supabase/client';
+import { getCachedEpisodeCount } from '@/services/intelligenceCache';
 
 export default function Settings() {
-  const { syncMetadata, isSyncing, setIsSyncing } = useSyncStore();
+  const { syncMetadata } = useSyncStore();
   const { progress, clearProgress } = useProgressStore();
   const { sync, status, progressMessage } = useDojoData();
-  const [syncResult, setSyncResult] = useState<string | null>(null);
   
-  // Cache seeding state
+  // Cache count state
   const [cacheCount, setCacheCount] = useState<number>(0);
-  const [isSeeding, setIsSeeding] = useState(false);
-  const [seedProgress, setSeedProgress] = useState({ current: 0, total: 0, message: '' });
-  const [seedResult, setSeedResult] = useState<string | null>(null);
   
   // Manual sync state
   const [isSyncingEpisodes, setIsSyncingEpisodes] = useState(false);
   const [syncEpisodeResult, setSyncEpisodeResult] = useState<string | null>(null);
   
-  
   // Load cache status on mount
   useEffect(() => {
-    getCacheStatus().then(status => setCacheCount(status.cached));
+    getCachedEpisodeCount().then(count => setCacheCount(count));
   }, []);
   
   // Refresh cache count when sync completes
   useEffect(() => {
     if (status === 'complete') {
-      getCacheStatus().then(s => setCacheCount(s.cached));
+      getCachedEpisodeCount().then(count => setCacheCount(count));
     }
   }, [status]);
-  
-  const handleSeedCache = async () => {
-    setIsSeeding(true);
-    setSeedResult(null);
-    setSeedProgress({ current: 0, total: 100, message: 'Starting...' });
-    
-    try {
-      const result = await seedIntelligenceCache((current, total, message) => {
-        setSeedProgress({ current, total, message });
-      });
-      
-      setCacheCount(result.cached + result.seeded);
-      setSeedResult(`Seeded ${result.seeded} episodes!`);
-    } catch (error) {
-      console.error('Seed cache error:', error);
-      setSeedResult('Error: ' + (error instanceof Error ? error.message : 'Unknown'));
-    } finally {
-      setIsSeeding(false);
-      setTimeout(() => setSeedResult(null), 5000);
-    }
-  };
   
   const handleCheckUpdates = async () => {
     // Just trigger sync directly
@@ -106,8 +76,8 @@ export default function Settings() {
       }
       
       // Update cache count
-      const status = await getCacheStatus();
-      setCacheCount(status.cached);
+      const count = await getCachedEpisodeCount();
+      setCacheCount(count);
       
       setSyncEpisodeResult(data.message || `Processed ${data.processed || 0} new episodes`);
     } catch (error) {
@@ -142,58 +112,6 @@ export default function Settings() {
         </p>
         
         <div className="space-y-8">
-          {/* Intelligence Cache */}
-          <section className="p-6 rounded-xl border border-border bg-card">
-            <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-              <Database className="h-5 w-5 text-primary" />
-              Intelligence Cache
-            </h2>
-            
-            <p className="text-sm text-muted-foreground mb-4">
-              Pre-populate the cache with demo intelligence data for all episodes. 
-              This enables the Companies and Frameworks pages to work without AI extraction.
-            </p>
-            
-            <div className="space-y-4">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Episodes cached</span>
-                <span className="font-medium">{cacheCount}</span>
-              </div>
-              
-              {isSeeding && (
-                <div className="space-y-2">
-                  <Progress value={(seedProgress.current / seedProgress.total) * 100} className="h-2" />
-                  <p className="text-xs text-muted-foreground">{seedProgress.message}</p>
-                </div>
-              )}
-              
-              <div className="pt-2">
-                <Button
-                  onClick={handleSeedCache}
-                  disabled={isSeeding}
-                  className="gap-2"
-                  variant={cacheCount > 0 ? "outline" : "default"}
-                >
-                  {isSeeding ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Seeding Cache...
-                    </>
-                  ) : seedResult ? (
-                    <>
-                      <Check className="h-4 w-4" />
-                      {seedResult}
-                    </>
-                  ) : (
-                    <>
-                      <Database className="h-4 w-4" />
-                      {cacheCount > 0 ? 'Re-seed Cache' : 'Seed Intelligence Cache'}
-                    </>
-                  )}
-                </Button>
-              </div>
-            </div>
-          </section>
           
           {/* Sync New Episodes from GitHub */}
           <section className="p-6 rounded-xl border border-border bg-card">
