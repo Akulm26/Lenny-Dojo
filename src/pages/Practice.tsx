@@ -42,7 +42,7 @@ const TIMER_MODES = [
 export default function Practice() {
   const [config, setConfig] = useState<SessionConfig>({
     company: null,
-    interview_types: [...ALL_INTERVIEW_TYPES],
+    interview_types: [],
     difficulty: 'medium',
     session_length: 3,
     timer_mode: 'none',
