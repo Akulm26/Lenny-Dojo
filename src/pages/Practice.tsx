@@ -8,10 +8,11 @@ import {
   Clock,
   Flame
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import type { InterviewType, Difficulty, SessionConfig } from '@/types';
 import { INTERVIEW_TYPE_INFO, DIFFICULTY_INFO } from '@/types';
+import { useDojoData } from '@/contexts/DojoDataContext';
 import {
   Select,
   SelectContent,
@@ -40,6 +41,14 @@ const TIMER_MODES = [
 ] as const;
 
 export default function Practice() {
+  const { companies } = useDojoData();
+  
+  // Get unique company names sorted alphabetically
+  const companyOptions = useMemo(() => {
+    const uniqueNames = [...new Set(companies.map(c => c.name))].sort();
+    return uniqueNames;
+  }, [companies]);
+  
   const [config, setConfig] = useState<SessionConfig>({
     company: null,
     interview_types: [],
@@ -207,12 +216,11 @@ export default function Practice() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All companies</SelectItem>
-                <SelectItem value="airbnb">Airbnb</SelectItem>
-                <SelectItem value="stripe">Stripe</SelectItem>
-                <SelectItem value="slack">Slack</SelectItem>
-                <SelectItem value="spotify">Spotify</SelectItem>
-                <SelectItem value="notion">Notion</SelectItem>
-                <SelectItem value="figma">Figma</SelectItem>
+                {companyOptions.map((name) => (
+                  <SelectItem key={name} value={name.toLowerCase()}>
+                    {name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
