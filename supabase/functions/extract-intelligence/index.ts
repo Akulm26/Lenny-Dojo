@@ -131,6 +131,16 @@ Include ONLY items explicitly discussed. Empty arrays are fine if nothing fits a
       if (response.ok) {
         const data = await response.json();
         content = data.choices?.[0]?.message?.content ?? '';
+        
+        // If we got a 200 but no content, log the full response and retry
+        if (!content) {
+          console.warn(`Attempt ${attempt}: AI returned 200 but empty content. Response:`, JSON.stringify(data).substring(0, 500));
+          if (attempt === maxAttempts) {
+            throw new Error('AI returned empty response after all retries');
+          }
+          await new Promise((r) => setTimeout(r, 1000 * attempt));
+          continue;
+        }
         break;
       }
 
@@ -163,7 +173,7 @@ Include ONLY items explicitly discussed. Empty arrays are fine if nothing fits a
     }
 
     if (!content) {
-      throw new Error(`Lovable AI error: ${lastStatus}`);
+      throw new Error('AI returned no content after all attempts');
     }
 
     let intelligenceData;
