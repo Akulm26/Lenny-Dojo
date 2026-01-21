@@ -30,18 +30,8 @@ const DojoDataContext: React.Context<DojoDataContextValue | null> =
 export function DojoDataProvider({ children }: { children: ReactNode }) {
   const dojoSync = useDojoSync();
   
-  // Auto-trigger sync check on mount if no data
-  useEffect(() => {
-    if (dojoSync.status === 'idle' && dojoSync.episodes.length === 0) {
-      // Load from cache first, then check for updates
-      // Avoid unhandled promise rejections (which can blank-screen the app)
-      void dojoSync.checkAndSync().catch((e) => {
-        console.error('Dojo initial sync check failed:', e);
-      });
-    }
-    // IMPORTANT: do NOT depend on the entire dojoSync object here (it changes every render)
-    // or we'll trigger repeated sync attempts and keep the UI in a loading state.
-  }, [dojoSync.status, dojoSync.episodes.length, dojoSync.checkAndSync]);
+  // NOTE: Auto-sync removed - users must explicitly trigger sync via Settings or refresh button
+  // This prevents unwanted caching/sync on login which ruins the user experience
 
   return (
     <DojoDataContext.Provider value={dojoSync}>
