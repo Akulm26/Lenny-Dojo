@@ -28,31 +28,45 @@ export async function seedIntelligenceCache(
   const episodeIds = await fetchEpisodeList();
   const total = episodeIds.length;
   
-  onProgress?.(total * 0.1, total, `Found ${total} episodes. Preparing batch...`);
-  
-  // Convert episode IDs to minimal metadata (no individual fetches needed!)
-  const episodes = episodeIds.map(id => ({
-    id,
-    guest: slugToName(id),
-    title: `${slugToName(id)} on Lenny's Podcast`,
-  }));
-  
-  onProgress?.(total * 0.2, total, `Extracting intelligence from ${episodes.length} episodes with AI...`);
-  
-  // Call edge function to seed the cache with real AI extraction
-  const { data, error } = await supabase.functions.invoke('seed-intelligence-cache', {
-    body: { episodes, forceReExtract }
-  });
-  
-  if (error) {
-    console.error('Seed cache error:', error);
-    throw new Error(error.message || 'Failed to seed intelligence cache');
+  onProgress?.(0, total, `Found ${total} episodes. Starting AI extraction...`);
+
+  // IMPORTANT: do NOT send all episodes in a single request.
+  // Edge functions have runtime limits; we chunk client-side and call repeatedly.
+  const CHUNK_SIZE = 5;
+  let processed = 0;
+  let seededTotal = 0;
+
+  for (let i = 0; i < episodeIds.length; i += CHUNK_SIZE) {
+    const chunkIds = episodeIds.slice(i, i + CHUNK_SIZE);
+
+    // Convert episode IDs to minimal metadata (we fetch real transcripts server-side)
+    const episodes = chunkIds.map(id => ({
+      id,
+      guest: slugToName(id),
+      title: `${slugToName(id)} on Lenny's Podcast`,
+    }));
+
+    onProgress?.(
+      processed,
+      total,
+      `Extracting ${Math.min(processed + episodes.length, total)}/${total}...`
+    );
+
+    const { data, error } = await supabase.functions.invoke('seed-intelligence-cache', {
+      body: { episodes, forceReExtract }
+    });
+
+    if (error) {
+      console.error('Seed cache error:', error);
+      throw new Error(error.message || 'Failed to extract intelligence');
+    }
+
+    seededTotal += (data?.seeded as number) || 0;
+    processed += episodes.length;
   }
-  
-  const seededCount = data.seeded || 0;
-  onProgress?.(total, total, `Done! Extracted ${seededCount} episodes with real AI.`);
-  
-  return data;
+
+  onProgress?.(total, total, `Done! Processed ${total} episodes.`);
+  return { cached: 0, seeded: seededTotal, total };
 }
 
 /**
