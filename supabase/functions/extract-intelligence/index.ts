@@ -1,26 +1,183 @@
-// Extract Intelligence Edge Function - v2 (no auth required)
+// Extract Intelligence Edge Function - v3 (BYOK - user's own API key required)
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
-const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY');
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// No authentication required for AI extraction
-// This is a safe operation that just processes transcripts
-function authenticateRequest(_req: Request): { authenticated: boolean } {
-  // Always allow - AI extraction doesn't need auth
-  return { authenticated: true };
+// Provider-specific API endpoints
+const PROVIDER_CONFIG: Record<string, { url: string; defaultModel: string; authHeader: (key: string) => Record<string, string> }> = {
+  openai: {
+    url: 'https://api.openai.com/v1/chat/completions',
+    defaultModel: 'gpt-4o',
+    authHeader: (key) => ({ 'Authorization': `Bearer ${key}` }),
+  },
+  google_gemini: {
+    url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+    defaultModel: 'gemini-2.5-flash',
+    authHeader: (key) => ({ 'Authorization': `Bearer ${key}` }),
+  },
+  anthropic: {
+    url: 'https://api.anthropic.com/v1/messages',
+    defaultModel: 'claude-sonnet-4-20250514',
+    authHeader: (key) => ({ 'x-api-key': key, 'anthropic-version': '2023-06-01' }),
+  },
+  deepseek: {
+    url: 'https://api.deepseek.com/chat/completions',
+    defaultModel: 'deepseek-chat',
+    authHeader: (key) => ({ 'Authorization': `Bearer ${key}` }),
+  },
+};
+
+// Authentication helper - returns userId OR identifies service_role caller
+async function authenticateRequest(req: Request): Promise<{ authenticated: boolean; userId?: string; isServiceRole?: boolean; error?: string }> {
+  const authHeader = req.headers.get('Authorization');
+  
+  if (!authHeader?.startsWith('Bearer ')) {
+    return { authenticated: false, error: 'Missing or invalid Authorization header' };
+  }
+
+  const token = authHeader.replace('Bearer ', '');
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+  // Check if this is a service_role call (from seed/sync admin functions)
+  if (serviceRoleKey && token === serviceRoleKey) {
+    return { authenticated: true, isServiceRole: true };
+  }
+
+  // Otherwise, authenticate as a regular user
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+  
+  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    global: { headers: { Authorization: authHeader } }
+  });
+
+  const { data, error } = await supabase.auth.getUser(token);
+  
+  if (error || !data?.user) {
+    return { authenticated: false, error: 'Invalid or expired token. Please log in.' };
+  }
+
+  return { authenticated: true, userId: data.user.id };
+}
+
+// Look up user's own API key from the database
+async function getUserApiKey(userId: string): Promise<{ provider: string; apiKey: string } | null> {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const supabase = createClient(supabaseUrl, serviceRoleKey);
+
+  const { data, error } = await supabase
+    .from('user_api_keys')
+    .select('provider, api_key')
+    .eq('user_id', userId)
+    .limit(1)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  return { provider: data.provider, apiKey: data.api_key };
+}
+
+// Call AI with user's key (for user calls) or Lovable AI (for service_role admin calls)
+async function callAI(
+  messages: Array<{role: string; content: string}>,
+  maxTokens: number,
+  options: { userId?: string; isServiceRole?: boolean }
+) {
+  // For authenticated users: require their own API key
+  if (options.userId) {
+    const userKey = await getUserApiKey(options.userId);
+    
+    if (!userKey || !PROVIDER_CONFIG[userKey.provider]) {
+      throw new Error('No API key configured. Please add your own API key in Settings → API Keys before using this feature.');
+    }
+
+    const config = PROVIDER_CONFIG[userKey.provider];
+
+    if (userKey.provider === 'anthropic') {
+      const response = await fetch(config.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...config.authHeader(userKey.apiKey) },
+        body: JSON.stringify({
+          model: config.defaultModel,
+          max_tokens: maxTokens,
+          system: messages.find(m => m.role === 'system')?.content || '',
+          messages: messages.filter(m => m.role !== 'system'),
+        }),
+      });
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Anthropic API error (${response.status}): ${errText}`);
+      }
+      const data = await response.json();
+      return data.content?.[0]?.text ?? '';
+    }
+
+    const response = await fetch(config.url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...config.authHeader(userKey.apiKey) },
+      body: JSON.stringify({ model: config.defaultModel, messages, max_tokens: maxTokens }),
+    });
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`${userKey.provider} API error (${response.status}): ${errText}`);
+    }
+    const data = await response.json();
+    return data.choices?.[0]?.message?.content ?? '';
+  }
+
+  // For service_role admin calls (seed/sync): use Lovable AI gateway
+  if (options.isServiceRole) {
+    if (!LOVABLE_API_KEY) {
+      throw new Error('LOVABLE_API_KEY is not configured for admin extraction');
+    }
+
+    const maxAttempts = 6;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+        },
+        body: JSON.stringify({ model: 'google/gemini-3-flash-preview', messages, max_tokens: maxTokens }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const content = data.choices?.[0]?.message?.content ?? '';
+        if (!content && attempt < maxAttempts) {
+          await new Promise(r => setTimeout(r, 1000 * attempt));
+          continue;
+        }
+        return content;
+      }
+
+      if (response.status === 429) {
+        if (attempt === maxAttempts) throw new Error('AI rate limited (429). Please try again later.');
+        const waitMs = Math.min(30000, 1500 * Math.pow(2, attempt - 1));
+        await new Promise(r => setTimeout(r, waitMs));
+        continue;
+      }
+
+      if (response.status === 402) throw new Error('Payment required (402).');
+      
+      const errorText = await response.text();
+      throw new Error(`Lovable AI error: ${response.status} - ${errorText}`);
+    }
+    throw new Error('AI returned no content after all attempts');
+  }
+
+  throw new Error('No valid authentication context for AI call');
 }
 
 // Validation constants
-const MAX_TRANSCRIPT_LENGTH = 120000; // Allow larger transcripts, will truncate for AI
+const MAX_TRANSCRIPT_LENGTH = 120000;
 const MAX_STRING_LENGTH = 500;
 
 interface ExtractRequest {
@@ -30,38 +187,19 @@ interface ExtractRequest {
   episodeTitle: string;
 }
 
-// Validate and sanitize string input
 function validateString(value: unknown, fieldName: string, maxLength: number, truncate = false): string {
-  if (typeof value !== 'string') {
-    throw new Error(`${fieldName} must be a string`);
-  }
-  if (value.length === 0) {
-    throw new Error(`${fieldName} cannot be empty`);
-  }
-  
+  if (typeof value !== 'string') throw new Error(`${fieldName} must be a string`);
+  if (value.length === 0) throw new Error(`${fieldName} cannot be empty`);
   let result = value;
-  
-  // Truncate if allowed and over limit
-  if (truncate && result.length > maxLength) {
-    result = result.substring(0, maxLength);
-  } else if (result.length > maxLength) {
-    throw new Error(`${fieldName} exceeds maximum length of ${maxLength}`);
-  }
-  
-  // Basic sanitization - remove control characters except newlines/tabs
+  if (truncate && result.length > maxLength) result = result.substring(0, maxLength);
+  else if (result.length > maxLength) throw new Error(`${fieldName} exceeds maximum length of ${maxLength}`);
   return result.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
 }
 
-// Validate request body
 function validateRequest(body: unknown): ExtractRequest {
-  if (!body || typeof body !== 'object') {
-    throw new Error('Request body must be a valid JSON object');
-  }
-
+  if (!body || typeof body !== 'object') throw new Error('Request body must be a valid JSON object');
   const obj = body as Record<string, unknown>;
-
   return {
-    // Allow truncation for transcript since we'll truncate again for AI anyway
     transcript: validateString(obj.transcript, 'transcript', MAX_TRANSCRIPT_LENGTH, true),
     episodeId: validateString(obj.episodeId, 'episodeId', MAX_STRING_LENGTH),
     guestName: validateString(obj.guestName, 'guestName', MAX_STRING_LENGTH),
@@ -75,18 +213,18 @@ serve(async (req) => {
   }
 
   try {
-    // No authentication required - always allow
-    const auth = authenticateRequest(req);
-
-    if (!LOVABLE_API_KEY) {
-      throw new Error('LOVABLE_API_KEY is not configured');
+    // Authenticate — require either user JWT or service_role
+    const auth = await authenticateRequest(req);
+    if (!auth.authenticated) {
+      return new Response(
+        JSON.stringify({ error: auth.error || 'Unauthorized. Please log in to use this feature.' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     // Parse and validate request
     let rawBody: unknown;
-    try {
-      rawBody = await req.json();
-    } catch {
+    try { rawBody = await req.json(); } catch {
       return new Response(
         JSON.stringify({ error: 'Invalid JSON in request body' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -94,16 +232,13 @@ serve(async (req) => {
     }
 
     let body: ExtractRequest;
-    try {
-      body = validateRequest(rawBody);
-    } catch (validationError) {
+    try { body = validateRequest(rawBody); } catch (validationError) {
       return new Response(
         JSON.stringify({ error: validationError instanceof Error ? validationError.message : 'Validation failed' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Truncate very long transcripts (already validated, but apply soft limit for AI)
     const transcript = body.transcript.length > MAX_TRANSCRIPT_LENGTH 
       ? body.transcript.substring(0, MAX_TRANSCRIPT_LENGTH) + '\n\n[Transcript truncated for processing]' 
       : body.transcript;
@@ -116,7 +251,7 @@ CRITICAL: Extract ONLY what is explicitly stated in the transcript.
 - If something isn't mentioned, don't include it
 - Capture direct quotes exactly as stated`;
 
-    const userPrompt = `EPISODE: "${body.episodeTitle}"
+    const userPrompt = `EPISODE: \"${body.episodeTitle}\"
 GUEST: ${body.guestName}
 
 TRANSCRIPT:
@@ -180,103 +315,23 @@ Extract intelligence from this transcript. Return ONLY this JSON:
 
 Include ONLY items explicitly discussed. Empty arrays are fine if nothing fits a category.`;
 
-    // Call Lovable AI with retries for transient 429s
-    const maxAttempts = 6;
-    let lastStatus = 0;
-    let content = '';
+    const content = await callAI(
+      [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }],
+      4096,
+      { userId: auth.userId, isServiceRole: auth.isServiceRole }
+    );
 
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-        },
-        body: JSON.stringify({
-          // Use a faster/less rate-limit-prone model for large batch extraction
-          model: 'google/gemini-3-flash-preview',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt }
-          ],
-          max_tokens: 4096,
-        }),
-      });
+    if (!content) throw new Error('AI returned empty response');
 
-      lastStatus = response.status;
-
-      if (response.ok) {
-        const data = await response.json();
-        content = data.choices?.[0]?.message?.content ?? '';
-        
-        // If we got a 200 but no content, log the full response and retry
-        if (!content) {
-          console.warn(`Attempt ${attempt}: AI returned 200 but empty content. Response:`, JSON.stringify(data).substring(0, 500));
-          if (attempt === maxAttempts) {
-            throw new Error('AI returned empty response after all retries');
-          }
-          await new Promise((r) => setTimeout(r, 1000 * attempt));
-          continue;
-        }
-        break;
-      }
-
-      const errorText = await response.text();
-
-      // Surface rate limiting clearly to the client
-      if (response.status === 429) {
-        if (attempt === maxAttempts) {
-          return new Response(JSON.stringify({ error: 'AI rate limited (429). Please try again in a few minutes.' }), {
-            status: 429,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
-        }
-
-        // Exponential backoff
-        const waitMs = Math.min(30000, 1500 * Math.pow(2, attempt - 1));
-        await new Promise((r) => setTimeout(r, waitMs));
-        continue;
-      }
-
-      if (response.status === 402) {
-        return new Response(JSON.stringify({ error: 'Payment required. Please add funds to your Lovable AI workspace.' }), {
-          status: 402,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-
-      console.error('Lovable AI error:', response.status, errorText);
-      throw new Error(`Lovable AI error: ${response.status}`);
-    }
-
-    if (!content) {
-      throw new Error('AI returned no content after all attempts');
-    }
-
+    // Parse JSON response
     let intelligenceData;
-    
-    // Clean up common AI JSON formatting issues
     const cleanJson = (text: string): string => {
-      // Extract JSON from markdown code blocks
       const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-      if (codeBlockMatch) {
-        text = codeBlockMatch[1];
-      }
-      
-      // Find the JSON object
+      if (codeBlockMatch) text = codeBlockMatch[1];
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (!jsonMatch) return text;
-      
       let json = jsonMatch[0];
-      
-      // Fix trailing commas in arrays and objects (common AI mistake)
       json = json.replace(/,(\s*[\]\}])/g, '$1');
-      
-      // Fix unescaped newlines in strings
-      json = json.replace(/:\s*"([^"]*(?:\\.[^"]*)*)"/g, (match) => {
-        return match.replace(/\n/g, '\\n').replace(/\r/g, '\\r');
-      });
-      
       return json;
     };
 
@@ -287,12 +342,11 @@ Include ONLY items explicitly discussed. Empty arrays are fine if nothing fits a
       try {
         intelligenceData = JSON.parse(cleaned);
       } catch (e2) {
-        console.error('JSON parse failed even after cleaning. First 2000 chars:', cleaned.substring(0, 2000));
+        console.error('JSON parse failed. First 2000 chars:', cleaned.substring(0, 2000));
         throw new Error('Failed to parse intelligence response: ' + (e2 instanceof Error ? e2.message : String(e2)));
       }
     }
 
-    // Add source metadata
     intelligenceData._source = {
       episode_id: body.episodeId,
       guest_name: body.guestName,
@@ -307,14 +361,7 @@ Include ONLY items explicitly discussed. Empty arrays are fine if nothing fits a
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
 
-    // Common transient case: client disconnected / incomplete body.
-    // Avoid treating it as a hard runtime error.
-    if (
-      (error as any)?.name === 'Http' &&
-      typeof message === 'string' &&
-      message.toLowerCase().includes('error reading a body')
-    ) {
-      console.warn('Extract intelligence request body read failed:', message);
+    if ((error as any)?.name === 'Http' && typeof message === 'string' && message.toLowerCase().includes('error reading a body')) {
       return new Response(
         JSON.stringify({ error: 'Request body was not fully received. Please retry.' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
