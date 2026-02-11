@@ -20,3 +20,6 @@ verify_jwt = false
 
 [functions.get-cache-status]
 verify_jwt = false
+
+[functions.manage-api-keys]
+verify_jwt = false

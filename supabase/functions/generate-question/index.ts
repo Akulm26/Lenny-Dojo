@@ -64,6 +64,20 @@ async function authenticateRequest(req: Request): Promise<{ authenticated: boole
   return { authenticated: true, userId: data.user.id };
 }
 
+// Decryption helper for encrypted API keys
+async function decryptApiKey(ciphertext: string): Promise<string> {
+  const raw = Deno.env.get('API_KEY_ENCRYPTION_KEY');
+  if (!raw) throw new Error('Encryption key not configured');
+  const encoder = new TextEncoder();
+  const keyMaterial = await crypto.subtle.digest('SHA-256', encoder.encode(raw));
+  const key = await crypto.subtle.importKey('raw', keyMaterial, { name: 'AES-GCM' }, false, ['decrypt']);
+  const combined = Uint8Array.from(atob(ciphertext), c => c.charCodeAt(0));
+  const iv = combined.slice(0, 12);
+  const encrypted = combined.slice(12);
+  const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, encrypted);
+  return new TextDecoder().decode(decrypted);
+}
+
 // Look up user's own API key from the database
 async function getUserApiKey(userId: string): Promise<{ provider: string; apiKey: string } | null> {
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -78,7 +92,15 @@ async function getUserApiKey(userId: string): Promise<{ provider: string; apiKey
     .maybeSingle();
 
   if (error || !data) return null;
-  return { provider: data.provider, apiKey: data.api_key };
+  
+  try {
+    const decryptedKey = await decryptApiKey(data.api_key);
+    return { provider: data.provider, apiKey: decryptedKey };
+  } catch (e) {
+    // Fallback: might be a legacy plaintext key
+    console.warn('Decryption failed, trying as plaintext:', e);
+    return { provider: data.provider, apiKey: data.api_key };
+  }
 }
 
 // Call AI with either user's own key or Lovable AI gateway
