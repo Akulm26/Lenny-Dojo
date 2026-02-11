@@ -29,9 +29,16 @@ const PROVIDERS = [
     helpUrl: 'https://console.anthropic.com/settings/keys',
     description: 'Used for Claude models',
   },
+  {
+    id: 'deepseek' as const,
+    name: 'DeepSeek',
+    placeholder: 'sk-...',
+    helpUrl: 'https://platform.deepseek.com/api_keys',
+    description: 'Used for DeepSeek models',
+  },
 ];
 
-type Provider = 'openai' | 'google_gemini' | 'anthropic';
+type Provider = 'openai' | 'google_gemini' | 'anthropic' | 'deepseek';
 
 interface StoredKey {
   provider: Provider;
