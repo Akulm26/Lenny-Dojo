@@ -2,6 +2,7 @@ import { Layout } from '@/components/layout/Layout';
 import { Button } from '@/components/ui/button';
 import { useSyncStore } from '@/stores/syncStore';
 import { useProgressStore } from '@/stores/progressStore';
+import { ApiKeyManager } from '@/components/settings/ApiKeyManager';
 import { 
   Settings as SettingsIcon,
   RefreshCw,
@@ -12,6 +13,7 @@ import {
   Database,
   Loader2,
   CloudDownload,
+  Key,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import {
@@ -144,6 +146,15 @@ export default function Settings() {
         </p>
         
         <div className="space-y-8">
+          {/* API Keys (BYOK) */}
+          <section className="p-6 rounded-xl border border-border bg-card">
+            <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <Key className="h-5 w-5 text-primary" />
+              Your API Keys
+            </h2>
+            <ApiKeyManager />
+          </section>
+
           {/* Intelligence Cache */}
           <section className="p-6 rounded-xl border border-border bg-card">
             <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
