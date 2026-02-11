@@ -6,6 +6,15 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Friendly error messages for invalid API keys
+function friendlyApiError(provider: string, status: number, _rawError: string): string {
+  const name = provider === 'google_gemini' ? 'Google Gemini' : provider === 'openai' ? 'OpenAI' : provider === 'deepseek' ? 'DeepSeek' : 'Anthropic';
+  if (status === 401 || status === 403) return `Your ${name} API key is invalid or has been revoked. Please update it in Settings → API Keys.`;
+  if (status === 429) return `Your ${name} API key has hit its rate limit. Please wait a moment or check your plan's usage limits.`;
+  if (status === 402 || status === 400) return `Your ${name} API key request was rejected (${status}). Please check your billing and API key permissions.`;
+  return `${name} returned an error (${status}). Please verify your API key in Settings → API Keys.`;
+}
+
 const PROVIDER_CONFIG: Record<string, { url: string; defaultModel: string; authHeader: (key: string) => Record<string, string> }> = {
   openai: {
     url: 'https://api.openai.com/v1/chat/completions',
@@ -89,7 +98,7 @@ async function callAI(userId: string, messages: Array<{role: string; content: st
       });
       if (!response.ok) {
         const errText = await response.text();
-        throw new Error(`Anthropic API error (${response.status}): ${errText}`);
+        throw new Error(friendlyApiError('Anthropic', response.status, errText));
       }
       const data = await response.json();
       return data.content?.[0]?.text ?? '';
@@ -102,7 +111,7 @@ async function callAI(userId: string, messages: Array<{role: string; content: st
     });
     if (!response.ok) {
       const errText = await response.text();
-      throw new Error(`${userKey.provider} API error (${response.status}): ${errText}`);
+      throw new Error(friendlyApiError(userKey.provider, response.status, errText));
     }
     const data = await response.json();
     return data.choices?.[0]?.message?.content ?? '';

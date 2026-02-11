@@ -4,7 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Key, Eye, EyeOff, Check, Trash2, Loader2, ExternalLink } from 'lucide-react';
+import { Key, Eye, EyeOff, Check, Trash2, Loader2, ExternalLink, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
 
 const PROVIDERS = [
@@ -146,10 +146,24 @@ export function ApiKeyManager() {
 
   return (
     <div className="space-y-4">
+      <div className="p-4 rounded-lg border border-primary/20 bg-primary/5 space-y-2">
+        <div className="flex items-start gap-2">
+          <ShieldCheck className="h-5 w-5 text-primary mt-0.5 shrink-0" />
+          <div>
+            <h3 className="text-sm font-medium text-foreground">Your API keys are safe</h3>
+            <p className="text-xs text-muted-foreground mt-1">
+              Your keys are stored securely in our database with strict row-level security — only you can access them. 
+              Keys are used exclusively server-side to process your AI requests and are <strong>never shared with third parties, other users, or app administrators</strong>. 
+              We do not store, log, or inspect your API key values beyond what's needed to make requests on your behalf. 
+              You can remove your key at any time.
+            </p>
+          </div>
+        </div>
+      </div>
+
       <p className="text-sm text-muted-foreground">
-        Provide your own API keys so AI requests are billed to your account.
-        Keys are stored securely and only accessible by you.
-        If no key is set, the default shared key is used.
+        Provide your own API key to use AI features. All AI requests are billed directly to your account.
+        You must configure at least one key to use practice sessions, evaluations, and intelligence extraction.
       </p>
 
       {PROVIDERS.map(provider => {
