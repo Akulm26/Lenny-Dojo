@@ -284,13 +284,38 @@ serve(async (req) => {
       totalSeeded += results.filter(Boolean).length;
     }
 
+    // After seeding intelligence, generate question bank for newly processed episodes
+    if (totalSeeded > 0) {
+      try {
+        console.log(`Generating question bank for ${totalSeeded} newly processed episodes...`);
+        const processedIds = episodesToProcess.map(e => e.id);
+        const qbResponse = await fetch(`${supabaseUrl}/functions/v1/generate-question-bank`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabaseKey}`,
+          },
+          body: JSON.stringify({ episodeIds: processedIds }),
+        });
+        
+        if (qbResponse.ok) {
+          const qbResult = await qbResponse.json();
+          console.log(`Question bank: generated ${qbResult.generated} questions`);
+        } else {
+          console.warn('Question bank generation had issues:', await qbResponse.text());
+        }
+      } catch (qbErr) {
+        console.warn('Question bank generation failed (non-fatal):', qbErr);
+      }
+    }
+
     return new Response(
       JSON.stringify({ 
         message: `Successfully extracted ${totalSeeded} episodes with real data`,
         cached: cachedIds.size,
         seeded: totalSeeded,
         total: episodes.length,
-        errors: errors.length > 0 ? errors.slice(0, 10) : undefined // Only first 10 errors
+        errors: errors.length > 0 ? errors.slice(0, 10) : undefined
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
