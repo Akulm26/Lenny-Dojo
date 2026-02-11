@@ -3,7 +3,6 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Key, Eye, EyeOff, Check, Trash2, Loader2, ExternalLink, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -61,19 +60,19 @@ export function ApiKeyManager() {
 
   const loadKeys = async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('user_api_keys')
-      .select('provider, updated_at')
-      .eq('user_id', user!.id);
+    
+    const { data, error } = await supabase.functions.invoke('manage-api-keys', {
+      body: { action: 'list' }
+    });
 
-    if (error) {
-      console.error('Failed to load API keys:', error);
+    if (error || data?.error) {
+      console.error('Failed to load API keys:', error || data?.error);
       setLoading(false);
       return;
     }
 
     const keys: StoredKey[] = PROVIDERS.map(p => {
-      const found = data?.find((d: any) => d.provider === p.id);
+      const found = (data?.keys || []).find((d: any) => d.provider === p.id);
       return {
         provider: p.id,
         hasKey: !!found,
@@ -91,27 +90,15 @@ export function ApiKeyManager() {
     }
 
     setSaving(true);
-    const existing = storedKeys.find(k => k.provider === provider);
 
-    let error;
-    if (existing?.hasKey) {
-      const result = await supabase
-        .from('user_api_keys')
-        .update({ api_key: keyInput.trim() })
-        .eq('user_id', user!.id)
-        .eq('provider', provider);
-      error = result.error;
-    } else {
-      const result = await supabase
-        .from('user_api_keys')
-        .insert({ user_id: user!.id, provider, api_key: keyInput.trim() });
-      error = result.error;
-    }
+    const { data, error } = await supabase.functions.invoke('manage-api-keys', {
+      body: { action: 'save', provider, apiKey: keyInput.trim() }
+    });
 
-    if (error) {
-      toast.error('Failed to save API key: ' + error.message);
+    if (error || data?.error) {
+      toast.error('Failed to save API key: ' + (error?.message || data?.error));
     } else {
-      toast.success(`${PROVIDERS.find(p => p.id === provider)?.name} key saved`);
+      toast.success(`${PROVIDERS.find(p => p.id === provider)?.name} key saved (encrypted)`);
       setEditingProvider(null);
       setKeyInput('');
       setShowKey(false);
@@ -121,16 +108,14 @@ export function ApiKeyManager() {
   };
 
   const handleDelete = async (provider: Provider) => {
-    const { error } = await supabase
-      .from('user_api_keys')
-      .delete()
-      .eq('user_id', user!.id)
-      .eq('provider', provider);
+    const { data, error } = await supabase.functions.invoke('manage-api-keys', {
+      body: { action: 'delete', provider }
+    });
 
-    if (error) {
-      toast.error('Failed to remove key: ' + error.message);
+    if (error || data?.error) {
+      toast.error('Failed to remove key: ' + (error?.message || data?.error));
     } else {
-      toast.success('API key removed. Default key will be used.');
+      toast.success('API key removed.');
       await loadKeys();
     }
   };
@@ -152,9 +137,9 @@ export function ApiKeyManager() {
           <div>
             <h3 className="text-sm font-medium text-foreground">Your API keys are safe</h3>
             <p className="text-xs text-muted-foreground mt-1">
-              Your keys are stored securely in our database with strict row-level security — only you can access them. 
-              Keys are used exclusively server-side to process your AI requests and are <strong>never shared with third parties, other users, or app administrators</strong>. 
-              We do not store, log, or inspect your API key values beyond what's needed to make requests on your behalf. 
+              Your keys are <strong>encrypted with AES-256</strong> before being stored. 
+              They are decrypted only server-side when processing your AI requests and are <strong>never shared with third parties, other users, or app administrators</strong>. 
+              We do not log or inspect your API key values. 
               You can remove your key at any time.
             </p>
           </div>
@@ -163,7 +148,7 @@ export function ApiKeyManager() {
 
       <p className="text-sm text-muted-foreground">
         Provide your own API key to use AI features. All AI requests are billed directly to your account.
-        You must configure at least one key to use practice sessions, evaluations, and intelligence extraction.
+        You must configure at least one key to use practice evaluations and intelligence extraction.
       </p>
 
       {PROVIDERS.map(provider => {
