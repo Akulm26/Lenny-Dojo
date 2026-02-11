@@ -1,6 +1,6 @@
 # Lenny's Dojo - Business Plan & Product Overview
 
-**Confidential Document | January 2026**
+**Confidential Document | February 2026**
 
 ---
 
@@ -37,7 +37,7 @@
 | Frameworks Extracted | 80+ |
 | Interview Types Covered | 9 |
 | Evaluation Dimensions | 5 |
-| AI Model | Google Gemini 2.5 Pro / 3 Flash Preview |
+| AI Model | Google Gemini 3 Flash Preview / 2.5 Pro (+ BYOK support) |
 
 ### Key Value Propositions
 
@@ -263,8 +263,8 @@ Current PMs targeting senior roles at top companies.
 #### Free Tier ($0/month)
 - Browse company intelligence
 - View framework library
-- 3 practice questions/month
-- ❌ AI evaluation
+- Unlimited practice questions (from pre-generated question bank)
+- ❌ AI evaluation (requires own API key or Pro plan)
 - ❌ Progress tracking
 
 #### Pro Tier ($29/month) ⭐ Most Popular
@@ -372,8 +372,10 @@ Current PMs targeting senior roles at top companies.
 | Component | Technology |
 |-----------|------------|
 | Intelligence Extraction | Google Gemini 2.5 Pro |
-| Question Generation | Google Gemini 2.5 Pro |
-| Answer Evaluation | Google Gemini 2.5 Flash |
+| Question Generation | Google Gemini 3 Flash Preview (pre-generated bank) |
+| Answer Evaluation | Google Gemini 3 Flash Preview |
+| BYOK Support | OpenAI, Google Gemini, Anthropic, DeepSeek |
+| Key Security | AES-256-GCM encryption at rest |
 
 ### Infrastructure
 
@@ -426,6 +428,9 @@ Current PMs targeting senior roles at top companies.
 | Automated daily sync pipeline | ✅ Complete |
 | Dual-layer caching (localStorage + database) | ✅ Complete |
 | Settings page with cache management | ✅ Complete |
+| Pre-generated question bank (instant practice loads) | ✅ Complete |
+| BYOK API key management (OpenAI, Gemini, Anthropic, DeepSeek) | ✅ Complete |
+| AES-256-GCM encryption for user API keys | ✅ Complete |
 
 ### Q2 2026 - Enhancement (Current)
 
@@ -547,6 +552,7 @@ Lenny's Dojo is an independent project dedicated to helping product managers suc
 |---------|------|---------|
 | 1.0 | January 2026 | Initial business documentation |
 | 1.1 | January 2026 | Updated episode count (303+), roadmap status, caching architecture |
+| 1.2 | February 2026 | Added BYOK system, question bank, API key encryption, updated AI models |
 
 ---
 

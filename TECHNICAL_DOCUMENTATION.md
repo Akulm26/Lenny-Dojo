@@ -1,7 +1,7 @@
 # Lenny's Dojo - Technical Documentation
 
-> **Version:** 1.1.0  
-> **Last Updated:** January 2026  
+> **Version:** 1.2.0  
+> **Last Updated:** February 2026  
 > **Repository:** [ChatPRD/lennys-podcast-transcripts](https://github.com/ChatPRD/lennys-podcast-transcripts)
 
 ---
@@ -68,11 +68,13 @@ Product Manager candidates lack access to real-world case studies and authentic 
 ├─────────────────────────────────────────────────────────────────┤
 │  Edge Functions                │  Database                      │
 │  - generate-question           │  - episode_intelligence_cache  │
-│  - evaluate-answer             │                                │
-│  - extract-intelligence        │  Auth                          │
-│  - seed-intelligence-cache     │  - Supabase Auth               │
-│  - sync-new-episodes           │  - Email/Password              │
-│  - get-cache-status            │                                │
+│  - evaluate-answer             │  - question_bank               │
+│  - extract-intelligence        │  - user_api_keys               │
+│  - seed-intelligence-cache     │                                │
+│  - sync-new-episodes           │  Auth                          │
+│  - generate-question-bank      │  - Supabase Auth               │
+│  - get-cache-status            │  - Email/Password              │
+│  - manage-api-keys             │                                │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -119,6 +121,7 @@ Product Manager candidates lack access to real-world case studies and authentic 
 | google/gemini-3-flash-preview | Question generation, Answer evaluation |
 | google/gemini-2.5-pro | Complex intelligence extraction |
 | Lovable AI Gateway | API abstraction layer |
+| User BYOK keys (OpenAI, Gemini, Anthropic, DeepSeek) | Optional override for AI requests |
 
 ---
 
@@ -189,6 +192,9 @@ lenny-dojo/
 │       ├── evaluate-answer/    # Answer evaluation function
 │       ├── extract-intelligence/# AI intelligence extraction
 │       ├── generate-question/  # Question generation
+│       ├── generate-question-bank/ # Pre-generated question bank
+│       ├── get-cache-status/   # Cache status endpoint
+│       ├── manage-api-keys/    # Encrypted API key CRUD
 │       ├── seed-intelligence-cache/ # Demo data seeding
 │       └── sync-new-episodes/  # GitHub sync automation
 ├── .env                        # Environment variables
@@ -440,6 +446,37 @@ interface CacheStatus {
   timestamp: string;   // ISO timestamp of check
 }
 ```
+
+### 7. `generate-question-bank`
+
+**Purpose:** Pre-generates interview questions from cached intelligence and stores them in the `question_bank` table for instant retrieval during practice sessions.
+
+**Endpoint:** `POST /functions/v1/generate-question-bank`
+
+**Authentication:** Service Role Key
+
+**Request:**
+```typescript
+interface GenerateQuestionBankRequest {
+  episodeLimit?: number;    // Max episodes to process (default: all)
+  questionsPerEpisode?: number; // Questions per episode (default: 3)
+}
+```
+
+### 8. `manage-api-keys`
+
+**Purpose:** Securely manages user-provided API keys with AES-256-GCM encryption at rest.
+
+**Endpoint:** `POST /functions/v1/manage-api-keys`
+
+**Authentication:** JWT (user token)
+
+**Actions:**
+- `list` — Returns which providers have keys configured (no values exposed)
+- `save` — Encrypts and stores an API key for a provider
+- `delete` — Removes a stored API key
+
+**Encryption:** Keys are encrypted using AES-256-GCM with a 256-bit key derived from the `API_KEY_ENCRYPTION_KEY` secret via SHA-256. A random 12-byte IV is prepended to the ciphertext and the result is base64-encoded before storage.
 
 ---
 
@@ -694,10 +731,40 @@ CREATE TABLE public.episode_intelligence_cache (
   extracted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
--- Index for episode lookups
-CREATE INDEX idx_episode_id ON episode_intelligence_cache(episode_id);
 ```
+
+### Table: `question_bank`
+
+```sql
+CREATE TABLE public.question_bank (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  episode_id TEXT NOT NULL,
+  company_name TEXT NOT NULL,
+  guest_name TEXT NOT NULL,
+  episode_title TEXT NOT NULL,
+  interview_type TEXT NOT NULL,
+  difficulty TEXT NOT NULL DEFAULT 'medium',
+  question JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+Pre-generated questions for instant practice session loading. RLS allows authenticated read, service_role write.
+
+### Table: `user_api_keys`
+
+```sql
+CREATE TABLE public.user_api_keys (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL,
+  provider TEXT NOT NULL,
+  api_key TEXT NOT NULL,  -- AES-256-GCM encrypted
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+Stores encrypted user-provided API keys. RLS restricts all operations to the owning user (`auth.uid() = user_id`).
 
 ### Intelligence JSONB Structure
 
@@ -770,7 +837,9 @@ USING (auth.role() = 'service_role');
 | extract-intelligence | Service Role Key |
 | seed-intelligence-cache | Service Role Key |
 | sync-new-episodes | Service Role Key OR CRON_SECRET |
+| generate-question-bank | Service Role Key |
 | get-cache-status | None (public read) |
+| manage-api-keys | JWT (user token) |
 
 ### Input Validation
 
@@ -802,7 +871,8 @@ VITE_SUPABASE_PROJECT_ID=[project-id]
 | `LOVABLE_API_KEY` | Lovable AI Gateway |
 | `GOOGLE_GEMINI_API_KEY` | Direct Gemini API |
 | `CRON_SECRET` | Cron job authentication |
-| `ANTHROPIC_API_KEY` | (Reserved) |
+| `API_KEY_ENCRYPTION_KEY` | AES-256-GCM encryption for user API keys |
+| `ANTHROPIC_API_KEY` | Fallback AI provider |
 
 ---
 
@@ -952,4 +1022,4 @@ This project is proprietary software. All rights reserved.
 
 ---
 
-*Documentation generated for Lenny's Dojo v1.1.0*
+*Documentation generated for Lenny's Dojo v1.2.0*
