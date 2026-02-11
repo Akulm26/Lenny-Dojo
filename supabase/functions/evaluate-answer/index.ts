@@ -8,8 +8,26 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const PROVIDER_CONFIG: Record<string, { url: string; defaultModel: string; authHeader: (key: string) => Record<string, string> }> = {
+  openai: {
+    url: 'https://api.openai.com/v1/chat/completions',
+    defaultModel: 'gpt-4o',
+    authHeader: (key) => ({ 'Authorization': `Bearer ${key}` }),
+  },
+  google_gemini: {
+    url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+    defaultModel: 'gemini-2.5-flash',
+    authHeader: (key) => ({ 'Authorization': `Bearer ${key}` }),
+  },
+  anthropic: {
+    url: 'https://api.anthropic.com/v1/messages',
+    defaultModel: 'claude-sonnet-4-20250514',
+    authHeader: (key) => ({ 'x-api-key': key, 'anthropic-version': '2023-06-01' }),
+  },
+};
+
 // Authentication helper
-async function authenticateRequest(req: Request): Promise<{ authenticated: boolean; error?: string }> {
+async function authenticateRequest(req: Request): Promise<{ authenticated: boolean; userId?: string; error?: string }> {
   const authHeader = req.headers.get('Authorization');
   
   if (!authHeader?.startsWith('Bearer ')) {
@@ -30,7 +48,82 @@ async function authenticateRequest(req: Request): Promise<{ authenticated: boole
     return { authenticated: false, error: 'Invalid or expired token' };
   }
 
-  return { authenticated: true };
+  return { authenticated: true, userId: data.user.id };
+}
+
+async function getUserApiKey(userId: string): Promise<{ provider: string; apiKey: string } | null> {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const supabase = createClient(supabaseUrl, serviceRoleKey);
+
+  const { data, error } = await supabase
+    .from('user_api_keys')
+    .select('provider, api_key')
+    .eq('user_id', userId)
+    .limit(1)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  return { provider: data.provider, apiKey: data.api_key };
+}
+
+async function callAI(userId: string, messages: Array<{role: string; content: string}>, maxTokens: number) {
+  const userKey = await getUserApiKey(userId);
+
+  if (userKey && PROVIDER_CONFIG[userKey.provider]) {
+    const config = PROVIDER_CONFIG[userKey.provider];
+
+    if (userKey.provider === 'anthropic') {
+      const response = await fetch(config.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...config.authHeader(userKey.apiKey) },
+        body: JSON.stringify({
+          model: config.defaultModel,
+          max_tokens: maxTokens,
+          system: messages.find(m => m.role === 'system')?.content || '',
+          messages: messages.filter(m => m.role !== 'system'),
+        }),
+      });
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Anthropic API error (${response.status}): ${errText}`);
+      }
+      const data = await response.json();
+      return data.content?.[0]?.text ?? '';
+    }
+
+    const response = await fetch(config.url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...config.authHeader(userKey.apiKey) },
+      body: JSON.stringify({ model: config.defaultModel, messages, max_tokens: maxTokens }),
+    });
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`${userKey.provider} API error (${response.status}): ${errText}`);
+    }
+    const data = await response.json();
+    return data.choices?.[0]?.message?.content ?? '';
+  }
+
+  if (!LOVABLE_API_KEY) {
+    throw new Error('No API key configured. Please add your own API key in Settings.');
+  }
+
+  const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${LOVABLE_API_KEY}` },
+    body: JSON.stringify({ model: 'google/gemini-3-flash-preview', messages, max_tokens: maxTokens }),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    if (response.status === 429) throw new Error('AI rate limited (429). Please try again shortly.');
+    if (response.status === 402) throw new Error('Payment required. Please add funds or use your own API key in Settings.');
+    throw new Error(`Lovable AI error: ${response.status} - ${error}`);
+  }
+
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content ?? '';
 }
 
 // Validation constants
@@ -138,10 +231,6 @@ serve(async (req) => {
       );
     }
 
-    if (!LOVABLE_API_KEY) {
-      throw new Error('LOVABLE_API_KEY is not configured');
-    }
-
     // Parse and validate request
     let rawBody: unknown;
     try {
@@ -237,41 +326,10 @@ Evaluate the answer. Return ONLY this JSON:
   "encouragement": "<1-2 sentences of genuine encouragement>"
 }`;
 
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-3-flash-preview',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
-        ],
-        max_tokens: 2000,
-      }),
-    });
-
-    if (!response.ok) {
-      const error = await response.text();
-      if (response.status === 429) {
-        return new Response(JSON.stringify({ error: 'AI rate limited (429). Please try again shortly.' }), {
-          status: 429,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-      }
-      if (response.status === 402) {
-        return new Response(JSON.stringify({ error: 'Payment required. Please add funds to your Lovable AI workspace.' }), {
-          status: 402,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-      }
-      throw new Error(`Lovable AI error: ${response.status} - ${error}`);
-    }
-
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content ?? '';
+    const content = await callAI(auth.userId!, [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ], 2000);
 
     let evaluationData;
     try {
