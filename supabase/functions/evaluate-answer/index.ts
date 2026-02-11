@@ -1,8 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -110,25 +108,8 @@ async function callAI(userId: string, messages: Array<{role: string; content: st
     return data.choices?.[0]?.message?.content ?? '';
   }
 
-  if (!LOVABLE_API_KEY) {
-    throw new Error('No API key configured. Please add your own API key in Settings.');
-  }
-
-  const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${LOVABLE_API_KEY}` },
-    body: JSON.stringify({ model: 'google/gemini-3-flash-preview', messages, max_tokens: maxTokens }),
-  });
-
-  if (!response.ok) {
-    const error = await response.text();
-    if (response.status === 429) throw new Error('AI rate limited (429). Please try again shortly.');
-    if (response.status === 402) throw new Error('Payment required. Please add funds or use your own API key in Settings.');
-    throw new Error(`Lovable AI error: ${response.status} - ${error}`);
-  }
-
-  const data = await response.json();
-  return data.choices?.[0]?.message?.content ?? '';
+  // No fallback — user must configure their own API key
+  throw new Error('No API key configured. Please add your own API key in Settings → API Keys before using this feature.');
 }
 
 // Validation constants
