@@ -25,6 +25,11 @@ const PROVIDER_CONFIG: Record<string, { url: string; defaultModel: string; authH
     defaultModel: 'claude-sonnet-4-20250514',
     authHeader: (key) => ({ 'x-api-key': key, 'anthropic-version': '2023-06-01' }),
   },
+  deepseek: {
+    url: 'https://api.deepseek.com/chat/completions',
+    defaultModel: 'deepseek-chat',
+    authHeader: (key) => ({ 'Authorization': `Bearer ${key}` }),
+  },
 };
 
 // Authentication helper - returns userId for key lookup
