@@ -19,7 +19,7 @@ const PROVIDERS = [
     id: 'google_gemini' as const,
     name: 'Google Gemini',
     placeholder: 'AIza...',
-    helpUrl: 'https://aistudio.google.com/app/apikey',
+    helpUrl: 'https://aistudio.google.com/apikey',
     description: 'Used for Gemini models',
   },
   {
