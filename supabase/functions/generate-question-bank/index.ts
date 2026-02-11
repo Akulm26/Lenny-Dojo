@@ -22,12 +22,26 @@ const INTERVIEW_TYPE_PROMPTS: Record<string, string> = {
   metrics: 'Generate a metrics/goal-setting question about defining success metrics, based on how the guest discussed measuring outcomes.',
 };
 
-// Service role only
-function authenticateRequest(req: Request): boolean {
+// Service role OR authenticated user
+async function authenticateRequest(req: Request): Promise<boolean> {
   const authHeader = req.headers.get('Authorization');
+  if (!authHeader?.startsWith('Bearer ')) return false;
+
+  const token = authHeader.replace('Bearer ', '');
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  if (!authHeader?.startsWith('Bearer ') || !serviceRoleKey) return false;
-  return authHeader.replace('Bearer ', '') === serviceRoleKey;
+  
+  // Service role
+  if (serviceRoleKey && token === serviceRoleKey) return true;
+  
+  // Authenticated user (any logged-in user can trigger population)
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+  const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
+  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    global: { headers: { Authorization: authHeader } }
+  });
+  const { data, error } = await supabase.auth.getUser(token);
+  return !error && !!data?.user;
 }
 
 async function callLovableAI(messages: Array<{role: string; content: string}>, maxTokens: number): Promise<string> {
@@ -73,7 +87,7 @@ serve(async (req) => {
   }
 
   try {
-    if (!authenticateRequest(req)) {
+    if (!(await authenticateRequest(req))) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -85,6 +99,9 @@ serve(async (req) => {
 
     const body = await req.json();
     const episodeIds: string[] = body.episodeIds || [];
+    const maxQuestions: number = body.maxQuestions || 999;
+    const typesFilter: string[] = body.types || INTERVIEW_TYPES;
+    const diffsFilter: string[] = body.difficulties || DIFFICULTIES;
 
     // Fetch intelligence for specified episodes (or all)
     let query = supabase.from('episode_intelligence_cache').select('*');
@@ -138,8 +155,9 @@ serve(async (req) => {
         .slice(0, 5);
 
       // Generate questions for each type/difficulty combo
-      for (const type of INTERVIEW_TYPES) {
-        for (const diff of DIFFICULTIES) {
+      for (const type of typesFilter) {
+        for (const diff of diffsFilter) {
+          if (generated >= maxQuestions) break;
           const key = `${episode.episode_id}:${type}:${diff}`;
           if (existingSet.has(key)) continue;
 
