@@ -44,6 +44,42 @@ export type Database = {
         }
         Relationships: []
       }
+      question_bank: {
+        Row: {
+          company_name: string
+          created_at: string
+          difficulty: string
+          episode_id: string
+          episode_title: string
+          guest_name: string
+          id: string
+          interview_type: string
+          question: Json
+        }
+        Insert: {
+          company_name: string
+          created_at?: string
+          difficulty?: string
+          episode_id: string
+          episode_title: string
+          guest_name: string
+          id?: string
+          interview_type: string
+          question: Json
+        }
+        Update: {
+          company_name?: string
+          created_at?: string
+          difficulty?: string
+          episode_id?: string
+          episode_title?: string
+          guest_name?: string
+          id?: string
+          interview_type?: string
+          question?: Json
+        }
+        Relationships: []
+      }
       user_api_keys: {
         Row: {
           api_key: string

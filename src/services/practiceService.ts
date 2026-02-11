@@ -1,4 +1,4 @@
-// Service to fetch practice data from the cached intelligence
+// Service to fetch practice data from the pre-generated question bank
 import { supabase } from '@/integrations/supabase/client';
 import type { InterviewType, Difficulty, SessionConfig } from '@/types';
 import type { GeneratedQuestion, AnswerEvaluation } from './ai';
@@ -13,13 +13,64 @@ export interface CompanyContext {
 }
 
 /**
- * Fetch a random company with rich context from the intelligence cache
+ * Fetch a random pre-generated question from the question bank.
+ * No AI calls needed — questions are pre-generated during sync.
+ */
+export async function getRandomQuestion(
+  config: SessionConfig
+): Promise<GeneratedQuestion | null> {
+  try {
+    // Build query with filters
+    let query = supabase
+      .from('question_bank')
+      .select('*');
+
+    // Filter by interview type
+    if (config.interview_types?.length > 0) {
+      query = query.in('interview_type', config.interview_types);
+    }
+
+    // Filter by difficulty
+    if (config.difficulty) {
+      query = query.eq('difficulty', config.difficulty);
+    }
+
+    // Filter by company if specified
+    if (config.company) {
+      query = query.ilike('company_name', config.company);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error('Question bank query error:', error);
+      return null;
+    }
+
+    if (!data || data.length === 0) {
+      console.warn('No questions found in question bank matching filters');
+      return null;
+    }
+
+    // Pick a random question
+    const randomIndex = Math.floor(Math.random() * data.length);
+    const row = data[randomIndex];
+
+    // The question JSONB column contains the full GeneratedQuestion structure
+    return row.question as unknown as GeneratedQuestion;
+  } catch (err) {
+    console.error('Error fetching from question bank:', err);
+    return null;
+  }
+}
+
+/**
+ * Legacy: Fetch a random company context from cache (still used for fallback)
  */
 export async function getRandomCompanyContext(
   config: SessionConfig
 ): Promise<CompanyContext | null> {
   try {
-    // Fetch all cached intelligence
     const { data, error } = await supabase
       .from('episode_intelligence_cache')
       .select('*');
@@ -29,7 +80,6 @@ export async function getRandomCompanyContext(
       return null;
     }
 
-    // Build a list of companies with their contexts
     const companiesWithContext: CompanyContext[] = [];
 
     for (const row of data) {
@@ -37,12 +87,10 @@ export async function getRandomCompanyContext(
       if (!intel?.companies) continue;
 
       for (const company of intel.companies) {
-        // Skip if filtering by company and doesn't match
         if (config.company && company.name.toLowerCase() !== config.company.toLowerCase()) {
           continue;
         }
 
-        // Skip companies with no decisions or context
         if (!company.decisions?.length && !company.opinions?.length) continue;
 
         const decisions = (company.decisions || []).map((d: any) => 
@@ -59,20 +107,16 @@ export async function getRandomCompanyContext(
         companiesWithContext.push({
           companyName: company.name,
           companyContext: company.mention_context || `${company.name} as discussed by ${row.guest_name}`,
-          decisions: decisions.slice(0, 5), // Limit to 5 decisions
-          quotes: quotes.slice(0, 5), // Limit to 5 quotes
+          decisions: decisions.slice(0, 5),
+          quotes: quotes.slice(0, 5),
           guestName: row.guest_name,
           episodeTitle: row.episode_title,
         });
       }
     }
 
-    if (companiesWithContext.length === 0) {
-      console.warn('No companies with rich context found');
-      return null;
-    }
+    if (companiesWithContext.length === 0) return null;
 
-    // Pick a random company
     const randomIndex = Math.floor(Math.random() * companiesWithContext.length);
     return companiesWithContext[randomIndex];
   } catch (err) {
@@ -82,7 +126,7 @@ export async function getRandomCompanyContext(
 }
 
 /**
- * Generate a question using Lovable AI
+ * Generate a question using AI (fallback when question bank is empty)
  */
 export async function generateQuestion(
   interviewType: InterviewType,
@@ -104,14 +148,7 @@ export async function generateQuestion(
 
   if (error) {
     console.error('Generate question error:', error);
-    // Try to extract more specific error info
     const errorMessage = error.message || 'Failed to generate question';
-    if (errorMessage.includes('429') || errorMessage.includes('rate')) {
-      throw new Error('Rate limited. Please wait a moment and try again.');
-    }
-    if (errorMessage.includes('402') || errorMessage.includes('Payment')) {
-      throw new Error('AI credits depleted. Please add funds in Settings.');
-    }
     throw new Error(errorMessage);
   }
 
@@ -123,7 +160,7 @@ export async function generateQuestion(
 }
 
 /**
- * Evaluate an answer using Lovable AI
+ * Evaluate an answer using AI (BYOK - requires user's own API key)
  */
 export async function evaluateAnswer(params: {
   question: string;
@@ -141,12 +178,6 @@ export async function evaluateAnswer(params: {
   if (error) {
     console.error('Evaluate answer error:', error);
     const errorMessage = error.message || 'Failed to evaluate answer';
-    if (errorMessage.includes('429') || errorMessage.includes('rate')) {
-      throw new Error('Rate limited. Please wait a moment and try again.');
-    }
-    if (errorMessage.includes('402') || errorMessage.includes('Payment')) {
-      throw new Error('AI credits depleted. Please add funds in Settings.');
-    }
     throw new Error(errorMessage);
   }
 

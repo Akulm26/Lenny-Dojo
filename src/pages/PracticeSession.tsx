@@ -19,7 +19,7 @@ import { cn } from '@/lib/utils';
 import { INTERVIEW_TYPE_INFO, DIFFICULTY_INFO } from '@/types';
 import type { InterviewType, Difficulty, SessionConfig } from '@/types';
 import { useProgressStore } from '@/stores/progressStore';
-import { getRandomCompanyContext, generateQuestion, CompanyContext } from '@/services/practiceService';
+import { getRandomQuestion, getRandomCompanyContext, generateQuestion, CompanyContext } from '@/services/practiceService';
 import type { GeneratedQuestion } from '@/services/ai';
 import { toast } from 'sonner';
 
@@ -60,10 +60,29 @@ export default function PracticeSession() {
   const loadQuestion = async () => {
     setIsLoading(true);
     setError(null);
-    setLoadingMessage('Finding a scenario from the podcast archive...');
+    setLoadingMessage('Finding a practice question...');
     
     try {
-      // Step 1: Get random company context from cache
+      // Step 1: Try the pre-generated question bank (no AI needed)
+      const bankQuestion = await getRandomQuestion(config);
+      
+      if (bankQuestion) {
+        setQuestion(bankQuestion);
+        setCompanyContext({
+          companyName: bankQuestion.company,
+          companyContext: '',
+          decisions: [],
+          quotes: [],
+          guestName: bankQuestion.source?.guest_name || '',
+          episodeTitle: bankQuestion.source?.episode_title || '',
+        });
+        setIsLoading(false);
+        return;
+      }
+      
+      // Step 2: Fallback to AI generation if question bank is empty
+      setLoadingMessage('No pre-generated questions found. Generating with AI...');
+      
       const context = await getRandomCompanyContext(config);
       
       if (!context) {
@@ -73,12 +92,10 @@ export default function PracticeSession() {
       setCompanyContext(context);
       setLoadingMessage(`Crafting a question about ${context.companyName}...`);
       
-      // Step 2: Pick a random interview type from config
       const randomType = config.interview_types[
         Math.floor(Math.random() * config.interview_types.length)
       ];
       
-      // Step 3: Generate question using Lovable AI
       const generatedQuestion = await generateQuestion(
         randomType,
         config.difficulty,

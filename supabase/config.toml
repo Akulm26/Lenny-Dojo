@@ -14,3 +14,9 @@ verify_jwt = false
 
 [functions.sync-new-episodes]
 verify_jwt = false
+
+[functions.generate-question-bank]
+verify_jwt = false
+
+[functions.get-cache-status]
+verify_jwt = false
