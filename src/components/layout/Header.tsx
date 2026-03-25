@@ -16,6 +16,7 @@ import {
 import { useState } from 'react';
 import { SyncIndicator } from './SyncIndicator';
 import { SpotlightSearch } from '@/components/SpotlightSearch';
+import { NotificationBell } from './NotificationBell';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   DropdownMenu,
@@ -78,6 +79,8 @@ export function Header() {
         {/* Right side */}
         <div className="flex items-center gap-3">
           <SpotlightSearch />
+          
+          <NotificationBell />
           
           <SyncIndicator />
           
