@@ -95,11 +95,7 @@ export default function Settings() {
     setSyncEpisodeResult(null);
     
     try {
-      const { data, error } = await supabase.functions.invoke('sync-new-episodes', {
-        headers: {
-          'x-cron-secret': 'lenny-sync-2024-secret'
-        }
-      });
+      const { data, error } = await supabase.functions.invoke('sync-new-episodes');
       
       if (error) {
         throw error;

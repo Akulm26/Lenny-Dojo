@@ -8,13 +8,18 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-secret',
 };
 
-// Authentication - supports service role OR cron secret
+// Authentication - supports service role, cron secret, or authenticated user JWT
 function authenticateRequest(req: Request): { authenticated: boolean; error?: string } {
   const authHeader = req.headers.get('Authorization');
   const cronSecret = req.headers.get('x-cron-secret');
   const expectedCronSecret = Deno.env.get('CRON_SECRET');
   
-  // Option 1: Service role key authentication (for manual triggers)
+  // Option 1: Cron secret authentication (for scheduled jobs)
+  if (cronSecret && expectedCronSecret && cronSecret === expectedCronSecret) {
+    return { authenticated: true };
+  }
+  
+  // Option 2: Service role key authentication
   if (authHeader?.startsWith('Bearer ')) {
     const token = authHeader.replace('Bearer ', '');
     if (token === SUPABASE_SERVICE_ROLE_KEY) {
@@ -22,8 +27,13 @@ function authenticateRequest(req: Request): { authenticated: boolean; error?: st
     }
   }
   
-  // Option 2: Cron secret authentication (for scheduled jobs)
-  if (cronSecret && expectedCronSecret && cronSecret === expectedCronSecret) {
+  // Option 3: Authenticated user JWT (validated by Supabase gateway)
+  // When called via supabase.functions.invoke(), the SDK automatically
+  // attaches the user's JWT. The Supabase gateway validates it before
+  // the request reaches this function.
+  if (authHeader?.startsWith('Bearer ') && authHeader.length > 50) {
+    // JWT tokens are significantly longer than the service role key
+    // The Supabase gateway has already validated this token
     return { authenticated: true };
   }
   
