@@ -437,6 +437,7 @@ Current PMs targeting senior roles at top companies.
 | Feature | Priority | Status |
 |---------|----------|--------|
 | "What's New" notification system | Medium | ✅ Complete |
+| In-app notification delivery (toast + bell + drawer) | Medium | ✅ Complete |
 | Mock interview simulator | High | Planned |
 | Voice answer recording | High | Planned |
 | Peer practice matching | Medium | Planned |
@@ -554,6 +555,7 @@ Lenny's Dojo is an independent project dedicated to helping product managers suc
 | 1.1 | January 2026 | Updated episode count (303+), roadmap status, caching architecture |
 | 1.2 | February 2026 | Added BYOK system, question bank, API key encryption, updated AI models |
 | 1.3 | March 2026 | Added "What's New" notification system, notifications_queue table, auto-new episode trigger |
+| 1.4 | March 2026 | Added in-app notification delivery: toast alerts, bell badge, auto-move fulfilled episodes, session deduplication |
 
 ---
 
