@@ -80,6 +80,8 @@ export function Header() {
         <div className="flex items-center gap-3">
           <SpotlightSearch />
           
+          <NotificationBell />
+          
           <SyncIndicator />
           
           <Link to="/settings" className="hidden md:flex">
