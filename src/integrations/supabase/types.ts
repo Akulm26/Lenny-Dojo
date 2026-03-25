@@ -23,6 +23,8 @@ export type Database = {
           guest_name: string
           id: string
           intelligence: Json
+          is_new: boolean
+          published_at: string | null
         }
         Insert: {
           created_at?: string
@@ -32,6 +34,8 @@ export type Database = {
           guest_name: string
           id?: string
           intelligence: Json
+          is_new?: boolean
+          published_at?: string | null
         }
         Update: {
           created_at?: string
@@ -41,6 +45,35 @@ export type Database = {
           guest_name?: string
           id?: string
           intelligence?: Json
+          is_new?: boolean
+          published_at?: string | null
+        }
+        Relationships: []
+      }
+      notifications_queue: {
+        Row: {
+          created_at: string
+          episode_title: string
+          guest_name: string
+          id: string
+          notified: boolean
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          episode_title: string
+          guest_name: string
+          id?: string
+          notified?: boolean
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          episode_title?: string
+          guest_name?: string
+          id?: string
+          notified?: boolean
+          user_id?: string
         }
         Relationships: []
       }
