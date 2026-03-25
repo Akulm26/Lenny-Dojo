@@ -92,7 +92,11 @@ const App = () => {
                     </ProtectedRoute>
                   } />
                   <Route path="/progress" element={<Progress />} />
-                  <Route path="/settings" element={<Settings />} />
+                  <Route path="/settings" element={
+                    <ProtectedRoute>
+                      <Settings />
+                    </ProtectedRoute>
+                  } />
                   <Route path="/business-document" element={<BusinessDocument />} />
                   {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                   <Route path="*" element={<NotFound />} />
