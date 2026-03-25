@@ -1,6 +1,6 @@
 # Lenny's Dojo - Technical Documentation
 
-> **Version:** 1.3.0  
+> **Version:** 1.4.0  
 > **Last Updated:** March 2026  
 > **Repository:** [ChatPRD/lennys-podcast-transcripts](https://github.com/ChatPRD/lennys-podcast-transcripts)
 
@@ -40,6 +40,7 @@
 - **Progress Tracking**: Comprehensive dashboard with readiness scoring
 - **Automated Sync**: Daily synchronization with podcast transcript repository
 - **Dual-Layer Caching**: localStorage for instant loads + database cache for persistence
+- **In-App Notifications**: "What's New" bell with toast alerts for subscribed episode availability
 
 ### Problem Statement
 
@@ -141,7 +142,8 @@ lenny-dojo/
 │   │   │   ├── LoadingScreen.tsx
 │   │   │   ├── SplashScreen.tsx
 │   │   │   ├── SyncIndicator.tsx
-│   │   │   └── SyncStatusBar.tsx
+│   │   │   ├── SyncStatusBar.tsx
+│   │   │   └── NotificationBell.tsx  # "What's New" bell + drawer
 │   │   └── ui/                 # shadcn/ui components
 │   ├── contexts/
 │   │   ├── AuthContext.tsx     # Authentication state
@@ -784,7 +786,18 @@ CREATE TABLE public.notifications_queue (
 );
 ```
 
-Stores user "Notify Me" subscriptions for upcoming/coming-soon episodes. RLS restricts all operations to the owning user. Used by the "What's New" notification drawer.
+Stores user "Notify Me" subscriptions for upcoming/coming-soon episodes. RLS restricts all operations (SELECT, INSERT, UPDATE, DELETE) to the owning user. Used by the in-app notification system.
+
+### In-App Notification System
+
+The `NotificationBell` component implements a client-side notification system without requiring email infrastructure:
+
+1. **Bell Icon** — Displays in the header with a pulsing red dot when new or fulfilled episodes exist
+2. **Drawer** — Side sheet showing "New Episodes" (with Practice Now buttons) and "Coming Soon" (with Notify Me buttons)
+3. **Toast Alerts** — On page load, cross-references the user's `notifications_queue` (where `notified = false`) against `episode_intelligence_cache`. When a subscribed coming-soon episode has been indexed, a toast fires with a Practice Now action
+4. **Auto-Move** — Fulfilled episodes automatically move from "Coming Soon" to "New Episodes" in the drawer
+5. **Deduplication** — Toasts shown once per session via `sessionStorage`; subscriptions marked `notified = true` in DB to prevent repeat notifications
+6. **Auto-New Trigger** — A `BEFORE INSERT` trigger (`set_episode_is_new`) on `episode_intelligence_cache` sets `is_new = true` for episodes created within the last 7 days
 
 ### Intelligence JSONB Structure
 
@@ -1042,4 +1055,4 @@ This project is proprietary software. All rights reserved.
 
 ---
 
-*Documentation generated for Lenny's Dojo v1.3.0*
+*Documentation generated for Lenny's Dojo v1.4.0*
