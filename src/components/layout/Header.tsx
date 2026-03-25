@@ -16,6 +16,7 @@ import {
 import { useState } from 'react';
 import { SyncIndicator } from './SyncIndicator';
 import { SpotlightSearch } from '@/components/SpotlightSearch';
+import { NotificationBell } from './NotificationBell';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   DropdownMenu,
