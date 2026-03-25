@@ -1,6 +1,6 @@
 # Lenny's Dojo - Business Plan & Product Overview
 
-**Confidential Document | February 2026**
+**Confidential Document | March 2026**
 
 ---
 
@@ -434,13 +434,13 @@ Current PMs targeting senior roles at top companies.
 
 ### Q2 2026 - Enhancement (Current)
 
-| Feature | Priority |
-|---------|----------|
-| Mock interview simulator | High |
-| Voice answer recording | High |
-| Peer practice matching | Medium |
-| Mobile-optimized experience | High |
-| Notification system | Medium |
+| Feature | Priority | Status |
+|---------|----------|--------|
+| "What's New" notification system | Medium | ✅ Complete |
+| Mock interview simulator | High | Planned |
+| Voice answer recording | High | Planned |
+| Peer practice matching | Medium | Planned |
+| Mobile-optimized experience | High | Planned |
 
 ### Q3 2026 - Expansion
 
@@ -553,6 +553,7 @@ Lenny's Dojo is an independent project dedicated to helping product managers suc
 | 1.0 | January 2026 | Initial business documentation |
 | 1.1 | January 2026 | Updated episode count (303+), roadmap status, caching architecture |
 | 1.2 | February 2026 | Added BYOK system, question bank, API key encryption, updated AI models |
+| 1.3 | March 2026 | Added "What's New" notification system, notifications_queue table, auto-new episode trigger |
 
 ---
 

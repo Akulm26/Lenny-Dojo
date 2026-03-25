@@ -1,7 +1,7 @@
 # Lenny's Dojo - Technical Documentation
 
-> **Version:** 1.2.0  
-> **Last Updated:** February 2026  
+> **Version:** 1.3.0  
+> **Last Updated:** March 2026  
 > **Repository:** [ChatPRD/lennys-podcast-transcripts](https://github.com/ChatPRD/lennys-podcast-transcripts)
 
 ---
@@ -729,9 +729,13 @@ CREATE TABLE public.episode_intelligence_cache (
   episode_title TEXT NOT NULL,
   intelligence JSONB NOT NULL,
   extracted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  is_new BOOLEAN NOT NULL DEFAULT false,
+  published_at TIMESTAMPTZ
 );
 ```
+
+**Auto-New Trigger:** A `BEFORE INSERT` trigger (`set_episode_is_new`) automatically sets `is_new = true` for episodes created within the last 7 days.
 
 ### Table: `question_bank`
 
@@ -765,6 +769,22 @@ CREATE TABLE public.user_api_keys (
 ```
 
 Stores encrypted user-provided API keys. RLS restricts all operations to the owning user (`auth.uid() = user_id`).
+
+### Table: `notifications_queue`
+
+```sql
+CREATE TABLE public.notifications_queue (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  episode_title TEXT NOT NULL,
+  guest_name TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  notified BOOLEAN NOT NULL DEFAULT false,
+  UNIQUE(user_id, episode_title)
+);
+```
+
+Stores user "Notify Me" subscriptions for upcoming/coming-soon episodes. RLS restricts all operations to the owning user. Used by the "What's New" notification drawer.
 
 ### Intelligence JSONB Structure
 
@@ -1022,4 +1042,4 @@ This project is proprietary software. All rights reserved.
 
 ---
 
-*Documentation generated for Lenny's Dojo v1.2.0*
+*Documentation generated for Lenny's Dojo v1.3.0*
